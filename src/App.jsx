@@ -2,19 +2,17 @@ import React, { useState } from "react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { useAuth } from "./hooks/useAuth";
 import { Layout } from "./components/Layout";
-// Import the new Modals
 import { AddBillModal } from "./components/AddBillModal";
 import { AddItemsModal } from "./components/AddItemsModal";
-// Removed AddPurchaseModal import
+import { ConfirmModal } from "./components/ConfirmModal";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { Dashboard } from "./pages/Dashboard";
 import { SmartList } from "./pages/SmartList";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Toaster } from 'react-hot-toast';
-import { Timestamp } from "firebase/firestore"; // Import Timestamp
 
-// Auth context provider (no changes)
+// Auth context provider (no change)
 const AuthContext = React.createContext();
 const AuthProvider = ({ children }) => {
   const auth = useAuth();
@@ -35,27 +33,35 @@ function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const { isAuthReady } = useAuthContext();
 
-  // State for the modals
-  const [isAddBillOpen, setIsAddBillOpen] = useState(false);
-  const [isAddItemsOpen, setIsAddItemsOpen] = useState(false);
+  // --- Modal Management ---
+  const [isAddBillModalOpen, setIsAddBillModalOpen] = useState(false);
+  const [isAddItemsModalOpen, setIsAddItemsModalOpen] = useState(false);
   const [currentBillId, setCurrentBillId] = useState(null);
-  const [currentBillData, setCurrentBillData] = useState(null);
+  const [currentBillDate, setCurrentBillDate] = useState(null); // This will now store the YYYY-MM-DD string
 
-   // Function called by AddBillModal on successful save
-   const handleBillCreated = (billId, billData) => {
-       setCurrentBillId(billId);
-       setCurrentBillData(billData);
-       setIsAddBillOpen(false);
-       setIsAddItemsOpen(true);
+   // --- Open Add Bill Modal ---
+   const openNewBillProcess = () => {
+       setIsAddBillModalOpen(true);
    };
 
-   // Function to close the AddItemsModal
-   const handleCloseAddItems = () => {
-       setIsAddItemsOpen(false);
-       setCurrentBillId(null);
-       setCurrentBillData(null);
+   // --- Handle Bill Save Success ---
+   const handleBillSaved = (billId, billData) => {
+        setIsAddBillModalOpen(false); // Close bill modal
+        setCurrentBillId(billId); // Store the ID of the newly created/saved bill
+        
+        // --- FIX: Pass the YYYY-MM-DD string (billData.purchaseDate) directly ---
+        // This was the line causing the bug. It no longer converts to a new Date().
+        setCurrentBillDate(billData?.purchaseDate); 
+
+        setIsAddItemsModalOpen(true); // Open item modal
    };
 
+    // --- Handle Item Modal Close ---
+    const handleItemsModalClose = () => {
+        setIsAddItemsModalOpen(false);
+        setCurrentBillId(null); 
+        setCurrentBillDate(null);
+    };
 
   if (!isAuthReady) {
     return <LoadingScreen />;
@@ -63,26 +69,19 @@ function App() {
 
   return (
     <ThemeProvider>
+       {/* Toaster for notifications */}
        <Toaster
-         position="top-center"
-         reverseOrder={false}
-         toastOptions={{
-           duration: 3000,
-           style: {
-             background: 'var(--color-glass)',
-             color: 'var(--color-text)',
-             border: '1px solid var(--color-border)',
-             boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
-           },
-           success: { duration: 2000, iconTheme: { primary: '#22c55e', secondary: 'white' } },
-           error: { duration: 4000, iconTheme: { primary: '#ef4444', secondary: 'white' } },
-           loading: { iconTheme: { primary: 'var(--color-primary)', secondary: 'transparent' } }
-         }}
+          position="top-center"
+          reverseOrder={false}
+          toastOptions={{
+              duration: 3000,
+          }}
        />
+
       <Layout
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
-        setIsModalOpen={setIsAddBillOpen} // FAB now opens AddBillModal
+        setIsModalOpen={openNewBillProcess} 
       >
         {/* Page "Router" */}
         {currentPage === "dashboard" && <Dashboard />}
@@ -91,21 +90,19 @@ function App() {
         {currentPage === "settings" && <Settings />}
       </Layout>
 
-      {/* Render Modals */}
+      {/* --- Render Modals --- */}
       <AddBillModal
-        isOpen={isAddBillOpen}
-        onClose={() => setIsAddBillOpen(false)}
-        onBillCreated={handleBillCreated}
+        isOpen={isAddBillModalOpen}
+        onClose={() => setIsAddBillModalOpen(false)}
+        onSuccess={handleBillSaved}
       />
 
        <AddItemsModal
-         isOpen={isAddItemsOpen}
-         onClose={handleCloseAddItems}
+         isOpen={isAddItemsModalOpen}
+         onClose={handleItemsModalClose}
          billId={currentBillId}
-         billData={currentBillData}
+         billDate={currentBillDate} // Pass the correct YYYY-MM-DD string
        />
-
-        {/* BillDetailsModal is rendered inside Dashboard now */}
 
     </ThemeProvider>
   );

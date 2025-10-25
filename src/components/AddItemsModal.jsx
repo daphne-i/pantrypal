@@ -1,355 +1,301 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from 'react';
+import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../hooks/useAuth';
+import { handleSaveItems } from '../firebaseUtils';
+import { CATEGORIES, UNITS, getCategoryIcon } from '../constants';
+import { formatCurrency } from '../utils';
 import toast from 'react-hot-toast';
-import { useTheme } from "../context/ThemeContext";
-import { useAuth } from "../hooks/useAuth";
-import { handleSaveItems } from "../firebaseUtils";
-import { CATEGORIES, UNITS, getCategoryIcon } from "../constants";
-import { Timestamp, serverTimestamp } from "firebase/firestore"; // Import Timestamp directly and serverTimestamp
-import { formatCurrency } from '../utils'; // Import currency formatter
-import { X, Loader2, Plus, Check, Trash2, Edit2, Package, Hash, CircleDollarSign } from "lucide-react";
+import { X, Loader2, Plus, Save, Trash2, Edit2, CheckCircle, AlertTriangle } from 'lucide-react';
+
+// A single item row in the "to be added" list
+const ItemRow = ({ item, onEdit, onDelete }) => {
+    const CategoryIcon = getCategoryIcon(item.category);
+    return (
+        <div className="flex items-center justify-between p-2 bg-background rounded-md border border-border">
+            <div className="flex items-center gap-2 overflow-hidden">
+                <CategoryIcon size={16} className="text-icon flex-shrink-0" />
+                <div className="overflow-hidden">
+                    <p className="font-medium truncate" title={item.name}>{item.name}</p>
+                    <p className="text-xs text-text-secondary">
+                        {item.quantity} {item.unit} &bull; {formatCurrency(item.price)}
+                    </p>
+                </div>
+            </div>
+            <div className="flex flex-shrink-0 gap-1">
+                <button
+                    type="button"
+                    onClick={() => onEdit(item)}
+                    className="p-1 text-text-secondary hover:text-primary rounded"
+                    title="Edit Item"
+                >
+                    <Edit2 size={14} />
+                </button>
+                 <button
+                    type="button"
+                    onClick={() => onDelete(item.id)}
+                    className="p-1 text-text-secondary hover:text-red-500 rounded"
+                    title="Delete Item"
+                >
+                    <Trash2 size={14} />
+                </button>
+            </div>
+        </div>
+    );
+};
 
 
-export const AddItemsModal = ({ isOpen, onClose, billId, billData }) => {
+export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
   const { theme } = useTheme();
   const { userId, appId } = useAuth();
-
-  // State for the form fields
-  const [itemName, setItemName] = useState("");
-  const [quantity, setQuantity] = useState("1"); // Default to 1
-  const [unit, setUnit] = useState(UNITS[0]); // Default to first unit
-  const [category, setCategory] = useState(CATEGORIES[0].name); // Default to first category
-  const [price, setPrice] = useState(""); // This is TOTAL price for the item line
-
-  // State for items added in this session
-  const [itemsToAdd, setItemsToAdd] = useState([]);
-  const [editingIndex, setEditingIndex] = useState(null); // Index of item being edited
-
-  // State for saving process
-  const [isSaving, setIsSaving] = useState(false);
+  
+  // Form state
+  const [name, setName] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [unit, setUnit] = useState(UNITS[0]); // Default to first unit 'pcs'
+  const [category, setCategory] = useState(CATEGORIES[0].name); // Default to first category 'Bakery'
+  const [price, setPrice] = useState("");
   const [error, setError] = useState(null);
 
-  const nameInputRef = useRef(null); // Ref to focus name input
+  // List state
+  const [currentItems, setCurrentItems] = useState([]);
+  const [isEditingId, setIsEditingId] = useState(null); // Tracks ID of item being edited
+  const [isSavingAll, setIsSavingAll] = useState(false);
 
-  // Reset all state when modal closes or billId changes
+  // Clear everything when modal is closed or billId changes
   useEffect(() => {
-    if (!isOpen) {
-      setTimeout(() => { // Delay reset to allow closing animation
-        setItemsToAdd([]);
-        resetFormFields();
-        setError(null);
-        setIsSaving(false);
-        setEditingIndex(null);
-      }, 300);
-    } else {
-        // Focus name input when modal opens
-        nameInputRef.current?.focus();
+    if (isOpen) {
+        resetForm();
+        setCurrentItems([]);
+        setIsSavingAll(false);
     }
-  }, [isOpen, billId]); // Also reset if the bill context changes while open
+  }, [isOpen]);
 
-  // Function to reset only the input fields
-  const resetFormFields = () => {
-    setItemName("");
-    setQuantity("1");
+  const resetForm = () => {
+    setName("");
+    setQuantity(1);
     setUnit(UNITS[0]);
     setCategory(CATEGORIES[0].name);
     setPrice("");
-    setEditingIndex(null); // Exit editing mode
+    setIsEditingId(null);
+    setError(null);
   };
 
-  const handleAddItem = () => {
+  // --- Form Actions ---
+  const handleSubmit = (e) => {
+    e.preventDefault();
     setError(null);
+
     // Validation
-    const name = itemName.trim();
-    const qty = parseFloat(quantity);
-    const itemPrice = parseFloat(price);
-
-    if (!name || !quantity || !unit || !category || !price) {
-        setError("Please fill in all item details.");
-        return;
-    }
-    if (isNaN(qty) || qty <= 0) {
-        setError("Please enter a valid positive quantity.");
-        return;
-    }
-     if (isNaN(itemPrice) || itemPrice <= 0) {
-        setError("Please enter a valid positive price.");
-        return;
+    if (!name.trim() || !price || isNaN(parseFloat(price)) || parseFloat(price) < 0 || !quantity || isNaN(parseFloat(quantity)) || parseFloat(quantity) <= 0) {
+      setError("Please enter a valid name, price, and quantity.");
+      return;
     }
 
-    const newItem = {
-        name: name,
-        quantity: qty,
-        unit: unit,
-        category: category,
-        price: itemPrice,
-        // Include purchaseDate from billData if available (as JS Date)
-        purchaseDate: billData?.purchaseDate?.toDate ? billData.purchaseDate.toDate() : (billData?.purchaseDate instanceof Date ? billData.purchaseDate : null)
+    const itemToSave = {
+      id: isEditingId || crypto.randomUUID(), // Use existing ID if editing
+      name: name.trim(),
+      quantity: parseFloat(quantity),
+      unit,
+      category,
+      price: parseFloat(price),
     };
 
-    if (editingIndex !== null) {
-        // Update existing item
-        const updatedItems = [...itemsToAdd];
-        updatedItems[editingIndex] = newItem;
-        setItemsToAdd(updatedItems);
-        toast.success(`"${name}" updated.`);
+    if (isEditingId) {
+        // Update item in list
+        setCurrentItems(currentItems.map(item => item.id === isEditingId ? itemToSave : item));
+        toast.success("Item updated", { duration: 1500 });
     } else {
-       // Add new item
-       setItemsToAdd(prevItems => [...prevItems, newItem]);
-       toast.success(`"${name}" added to list.`);
+        // Add new item to list
+        setCurrentItems([itemToSave, ...currentItems]);
     }
-
-    resetFormFields();
-    nameInputRef.current?.focus(); // Focus name input for next item
+    
+    resetForm();
   };
 
-  const handleEditItem = (index) => {
-      const itemToEdit = itemsToAdd[index];
-      setItemName(itemToEdit.name);
-      setQuantity(String(itemToEdit.quantity));
-      setUnit(itemToEdit.unit);
-      setCategory(itemToEdit.category);
-      setPrice(String(itemToEdit.price));
-      setEditingIndex(index);
-      nameInputRef.current?.focus(); // Focus name input for editing
+  const handleEdit = (item) => {
+      setIsEditingId(item.id);
+      setName(item.name);
+      setQuantity(item.quantity);
+      setUnit(item.unit);
+      setCategory(item.category);
+      setPrice(item.price);
   };
 
-  const handleDeleteItem = (index) => {
-      const itemToDelete = itemsToAdd[index];
-      setItemsToAdd(prevItems => prevItems.filter((_, i) => i !== index));
-      toast.error(`"${itemToDelete.name}" removed.`);
-      // If we were editing the deleted item, exit editing mode
-      if (editingIndex === index) {
-          resetFormFields();
+  const handleDelete = (id) => {
+      setCurrentItems(currentItems.filter(item => item.id !== id));
+  };
+
+
+  // --- Save All Items ---
+  const handleSaveAllItems = async () => {
+      if (currentItems.length === 0) {
+          setError("No items to save. Add at least one item.");
+          return;
+      }
+      setIsSavingAll(true);
+      setError(null);
+      try {
+          // FIX: Pass the `billDate` (string) to the save function
+          await handleSaveItems(currentItems, billId, billDate, userId, appId);
+          toast.success(`Successfully saved ${currentItems.length} item(s)!`);
+          handleClose(); // Close modal on success
+      } catch (err) {
+          console.error("Error saving items:", err);
+          setError(`Failed to save items: ${err.message}`);
+          toast.error(`Error saving items: ${err.message}`);
+      } finally {
+          setIsSavingAll(false);
       }
   };
 
-
-  const handleSaveAllAndClose = async () => {
-    if (itemsToAdd.length === 0) {
-      setError("Add at least one item before saving.");
-      return;
-    }
-    if (!userId || !appId || !billId) {
-        setError("Cannot save. Missing user, app, or bill ID.");
-        return;
-    }
-
-    setIsSaving(true);
-    setError(null);
-    const toastId = toast.loading(`Saving ${itemsToAdd.length} item(s)...`);
-
-    try {
-        // Convert JS date back to Timestamp for saving
-        const itemsWithTimestamp = itemsToAdd.map(item => ({
-            ...item,
-            purchaseDate: item.purchaseDate ? Timestamp.fromDate(item.purchaseDate) : serverTimestamp()
-        }));
-
-        await handleSaveItems(itemsWithTimestamp, billId, userId, appId);
-        toast.success(`${itemsToAdd.length} item(s) saved successfully!`, { id: toastId });
-        onClose(); // Close the modal on success
-
-    } catch (err) {
-      console.error("Error saving items: ", err);
-      setError("Failed to save items. Please try again.");
-      toast.error(`Failed to save items: ${err.message}`, { id: toastId });
-      setIsSaving(false); // Only set saving to false on error
-    }
+  const handleClose = () => {
+    if (isSavingAll) return;
+    onClose();
   };
 
-  // Calculate total price of items added so far in this session
+  // Calculate total for items in the list
   const currentItemsTotal = useMemo(() => {
-    return itemsToAdd.reduce((sum, item) => sum + (item.price || 0), 0);
-  }, [itemsToAdd]);
-
+      return currentItems.reduce((sum, item) => sum + (item.price || 0), 0);
+  }, [currentItems]);
+  
 
   if (!isOpen) return null;
 
   return (
-    // Backdrop
     <div
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" // Darker backdrop
-      onClick={onClose} // Close if backdrop is clicked
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4"
+      onClick={handleClose}
     >
       {/* Modal Content */}
       <div
-        className={`w-full max-w-2xl p-6 rounded-2xl bg-glass border border-border shadow-xl z-50 flex flex-col max-h-[90vh]`} // Larger, taller modal
+        className={`w-full max-w-2xl p-6 rounded-2xl bg-glass border border-border shadow-xl z-50 flex flex-col max-h-[90vh]`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex justify-between items-center mb-4 pb-4 border-b border-border">
-          <div>
-              <h2 className="text-2xl font-bold">Add Items to Purchase</h2>
-              <p className="text-sm text-text-secondary">
-                  Shop: {billData?.shopName || 'N/A'} | Date: {billData?.purchaseDate?.toDate ? billData.purchaseDate.toDate().toLocaleDateString() : 'N/A'}
-              </p>
-          </div>
+          <h2 className="text-2xl font-bold">{isEditingId ? 'Edit Item' : 'Add Items to Bill'}</h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className={`p-2 rounded-full hover:bg-black/10 dark:hover:bg-white/10`}
-            disabled={isSaving}
+            disabled={isSavingAll}
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Form for adding a single item */}
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 mb-4 items-end">
-             {/* Item Name ( Wider ) */}
-             <div className="md:col-span-2 relative">
-                <label className="block text-xs font-medium mb-1">Item Name</label>
-                 <Package size={16} className="absolute left-2.5 top-[34px] text-text-secondary" />
+        {/* Form */}
+        <form className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end mb-4" onSubmit={handleSubmit}>
+            {/* Name */}
+            <div className="md:col-span-2">
+                <label htmlFor="itemName" className="block text-xs font-medium mb-1">Item Name</label>
                 <input
-                  ref={nameInputRef}
-                  type="text"
-                  placeholder="e.g., Apple"
-                  className={`w-full p-2 pl-8 rounded-md bg-input border border-border focus:ring-1 focus:ring-primary focus:outline-none`}
-                  value={itemName}
-                  onChange={(e) => setItemName(e.target.value)}
-                  disabled={isSaving}
+                  id="itemName" type="text" placeholder="e.g., Apple"
+                  className={`w-full p-2 rounded-lg bg-input border border-border text-sm focus:ring-2 focus:ring-primary focus:outline-none`}
+                  value={name} onChange={(e) => setName(e.target.value)} required
                 />
-             </div>
-
-              {/* Quantity */}
-              <div className="relative">
-                <label className="block text-xs font-medium mb-1">Qty</label>
-                <Hash size={16} className="absolute left-2.5 top-[34px] text-text-secondary" />
+            </div>
+            {/* Qty */}
+            <div>
+                <label htmlFor="itemQty" className="block text-xs font-medium mb-1">Qty</label>
                 <input
-                  type="number"
-                  step="0.1" // Allow decimals for weight
-                  min="0.1"
-                  placeholder="1"
-                  className={`w-full p-2 pl-8 rounded-md bg-input border border-border focus:ring-1 focus:ring-primary focus:outline-none`}
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                  disabled={isSaving}
+                  id="itemQty" type="number" step="0.1" min="0.1" placeholder="1"
+                  className={`w-full p-2 rounded-lg bg-input border border-border text-sm focus:ring-2 focus:ring-primary focus:outline-none`}
+                  value={quantity} onChange={(e) => setQuantity(e.target.value)} required
                 />
-             </div>
-
-              {/* Unit */}
-              <div>
-                <label className="block text-xs font-medium mb-1">Unit</label>
+            </div>
+            {/* Unit */}
+             <div>
+                <label htmlFor="itemUnit" className="block text-xs font-medium mb-1">Unit</label>
                 <select
-                  className={`w-full p-2 rounded-md bg-input border border-border focus:ring-1 focus:ring-primary focus:outline-none appearance-none`}
-                  value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  disabled={isSaving}
+                  id="itemUnit"
+                  className={`w-full p-2 rounded-lg bg-input border border-border text-sm focus:ring-2 focus:ring-primary focus:outline-none appearance-none`}
+                  value={unit} onChange={(e) => setUnit(e.target.value)}
                 >
-                  {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
-             </div>
-
-             {/* Category */}
-              <div>
-                <label className="block text-xs font-medium mb-1">Category</label>
+            </div>
+            {/* Category */}
+             <div>
+                <label htmlFor="itemCat" className="block text-xs font-medium mb-1">Category</label>
                 <select
-                  className={`w-full p-2 rounded-md bg-input border border-border focus:ring-1 focus:ring-primary focus:outline-none appearance-none`}
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  disabled={isSaving}
+                  id="itemCat"
+                  className={`w-full p-2 rounded-lg bg-input border border-border text-sm focus:ring-2 focus:ring-primary focus:outline-none appearance-none`}
+                  value={category} onChange={(e) => setCategory(e.target.value)}
                 >
-                  {CATEGORIES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                    {CATEGORIES.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
                 </select>
-             </div>
-
-             {/* Price (Total for item line) */}
-             <div className="relative">
-                <label className="block text-xs font-medium mb-1">Total Price</label>
-                <CircleDollarSign size={16} className="absolute left-2.5 top-[34px] text-text-secondary" />
+            </div>
+            {/* Price */}
+             <div>
+                <label htmlFor="itemPrice" className="block text-xs font-medium mb-1">Total Price</label>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  placeholder="57.00" // Example placeholder
-                  className={`w-full p-2 pl-8 rounded-md bg-input border border-border focus:ring-1 focus:ring-primary focus:outline-none`}
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  disabled={isSaving}
+                  id="itemPrice" type="number" step="0.01" min="0" placeholder="0.00"
+                  className={`w-full p-2 rounded-lg bg-input border border-border text-sm focus:ring-2 focus:ring-primary focus:outline-none`}
+                  value={price} onChange={(e) => setPrice(e.target.value)} required
                 />
-             </div>
-
-             {/* Add/Update Button */}
-             <button
-                type="button"
-                onClick={handleAddItem}
-                className={`flex items-center justify-center gap-1 p-2 rounded-md font-medium ${editingIndex !== null ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-primary primary-hover'} text-primary-text transition-colors disabled:opacity-70`}
-                disabled={isSaving || !itemName || !price || !quantity}
-             >
-                {editingIndex !== null ? <Check size={16} /> : <Plus size={16} />}
-                {editingIndex !== null ? 'Update' : 'Add'}
+            </div>
+            {/* Add/Update Button */}
+            <button
+              type="submit"
+              className={`flex items-center justify-center gap-2 p-2 rounded-lg font-medium ${
+                isEditingId 
+                ? 'bg-amber-500 hover:bg-amber-600 text-white' 
+                : 'bg-primary text-primary-text primary-hover'
+              } transition-colors text-sm`}
+            >
+              {isEditingId ? <Edit2 size={16} /> : <Plus size={16} />}
+              {isEditingId ? 'Update' : 'Add'}
             </button>
-        </div>
-
-        {/* Item List Added So Far */}
-        <div className="flex-grow overflow-y-auto border-t border-b border-border py-2 mb-4">
-             <h3 className="text-lg font-semibold mb-2">Items Added ({itemsToAdd.length}) - Total: {formatCurrency(currentItemsTotal)}</h3>
-             {itemsToAdd.length === 0 ? (
-                 <p className="text-sm text-text-secondary text-center py-4">No items added to this bill yet.</p>
-             ) : (
-                <div className="space-y-2 pr-2">
-                    {itemsToAdd.map((item, index) => {
-                        const Icon = getCategoryIcon(item.category);
-                        return (
-                            <div key={index} className={`p-2 rounded-md border ${editingIndex === index ? 'border-primary bg-primary/10' : 'border-border bg-input'} flex items-center gap-3`}>
-                                <Icon size={20} className="text-icon opacity-80 flex-shrink-0" />
-                                <div className="flex-grow">
-                                     <p className="font-medium">{item.name}</p>
-                                     <p className="text-xs text-text-secondary">
-                                         {item.quantity} {item.unit} - {item.category}
-                                     </p>
-                                </div>
-                                <p className="font-semibold text-sm mr-2">{formatCurrency(item.price || 0)}</p>
-                                <button
-                                     onClick={() => handleEditItem(index)}
-                                     className="p-1 text-blue-500 hover:text-blue-700 disabled:opacity-50"
-                                     disabled={isSaving}
-                                     aria-label="Edit Item"
-                                 >
-                                     <Edit2 size={16} />
-                                 </button>
-                                 <button
-                                     onClick={() => handleDeleteItem(index)}
-                                     className="p-1 text-red-500 hover:text-red-700 disabled:opacity-50"
-                                     disabled={isSaving}
-                                     aria-label="Delete Item"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            </div>
-                        );
-                    })}
-                </div>
-             )}
-        </div>
+        </form>
 
         {/* Error Message */}
         {error && (
-            <p className="text-sm text-red-500 font-medium mb-4">{error}</p>
+            <p className="text-sm text-red-500 font-medium mb-2 text-center">{error}</p>
         )}
 
-        {/* Footer Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-border">
-            <button
-              type="button"
-              onClick={onClose}
-              className={`px-5 py-2 rounded-lg font-medium hover:bg-black/10 dark:hover:bg-white/10 transition-colors`}
-              disabled={isSaving}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSaveAllAndClose}
-              className={`flex items-center justify-center gap-2 px-5 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-70`}
-              disabled={isSaving || itemsToAdd.length === 0}
-            >
-              {isSaving ? (
-                <Loader2 size={18} className="animate-spin" />
-              ) : (
-                <Check size={18} />
-              )}
-              {isSaving ? "Saving..." : `Save ${itemsToAdd.length} Item(s) & Close`}
-            </button>
+        {/* Divider */}
+        <div className="border-t border-border mb-4"></div>
+
+        {/* Items List */}
+        <div className="flex-grow overflow-y-auto pr-2 space-y-2 min-h-[150px]">
+            {currentItems.length === 0 ? (
+                <p className="text-center text-text-secondary py-10">No items added yet.</p>
+            ) : (
+                currentItems.map(item => (
+                    <ItemRow key={item.id} item={item} onEdit={handleEdit} onDelete={handleDelete} />
+                ))
+            )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-between items-center pt-4 mt-4 border-t border-border">
+            <div>
+                <span className="font-semibold">Total Items: </span>{currentItems.length}
+                <span className="font-semibold ml-4">Total Price: </span>{formatCurrency(currentItemsTotal)}
+            </div>
+            <div className="flex gap-3">
+                 <button
+                    type="button"
+                    onClick={handleClose}
+                    className={`px-4 py-2 rounded-lg font-medium hover:bg-black/10 dark:hover:bg-white/10 transition-colors`}
+                    disabled={isSavingAll}
+                >
+                    Cancel
+                </button>
+                <button
+                    type="button"
+                    onClick={handleSaveAllItems}
+                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-70`}
+                    disabled={isSavingAll || currentItems.length === 0}
+                >
+                    {isSavingAll ? (
+                        <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                        <Save size={18} />
+                    )}
+                    {isSavingAll ? "Saving..." : `Save All (${currentItems.length}) Items`}
+                </button>
+            </div>
         </div>
       </div>
     </div>

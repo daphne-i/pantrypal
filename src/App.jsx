@@ -5,12 +5,14 @@ import { Layout } from "./components/Layout";
 // Import the new Modals
 import { AddBillModal } from "./components/AddBillModal";
 import { AddItemsModal } from "./components/AddItemsModal";
+// Removed AddPurchaseModal import
 import { LoadingScreen } from "./components/LoadingScreen";
 import { Dashboard } from "./pages/Dashboard";
 import { SmartList } from "./pages/SmartList";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Toaster } from 'react-hot-toast';
+import { Timestamp } from "firebase/firestore"; // Import Timestamp
 
 // Auth context provider (no changes)
 const AuthContext = React.createContext();
@@ -37,14 +39,14 @@ function App() {
   const [isAddBillOpen, setIsAddBillOpen] = useState(false);
   const [isAddItemsOpen, setIsAddItemsOpen] = useState(false);
   const [currentBillId, setCurrentBillId] = useState(null);
-  const [currentBillData, setCurrentBillData] = useState(null); // Store shop/date
+  const [currentBillData, setCurrentBillData] = useState(null);
 
    // Function called by AddBillModal on successful save
    const handleBillCreated = (billId, billData) => {
        setCurrentBillId(billId);
-       setCurrentBillData(billData); // Pass bill data to items modal
-       setIsAddBillOpen(false); // Close bill modal
-       setIsAddItemsOpen(true); // Open items modal immediately
+       setCurrentBillData(billData);
+       setIsAddBillOpen(false);
+       setIsAddItemsOpen(true);
    };
 
    // Function to close the AddItemsModal
@@ -74,7 +76,7 @@ function App() {
            },
            success: { duration: 2000, iconTheme: { primary: '#22c55e', secondary: 'white' } },
            error: { duration: 4000, iconTheme: { primary: '#ef4444', secondary: 'white' } },
-           loading: { iconTheme: { primary: 'var(--color-primary)', secondary: 'transparent' } } // Style loading toast
+           loading: { iconTheme: { primary: 'var(--color-primary)', secondary: 'transparent' } }
          }}
        />
       <Layout
@@ -100,8 +102,10 @@ function App() {
          isOpen={isAddItemsOpen}
          onClose={handleCloseAddItems}
          billId={currentBillId}
-         billData={currentBillData} // Pass bill data down
+         billData={currentBillData}
        />
+
+        {/* BillDetailsModal is rendered inside Dashboard now */}
 
     </ThemeProvider>
   );

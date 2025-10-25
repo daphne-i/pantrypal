@@ -1,8 +1,9 @@
-import React, { useMemo } from "react";
+import React, { useState, useMemo } from "react"; // Added useState
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../hooks/useAuth";
 import { useCollection } from "../hooks/useCollection";
 import { useDocument } from "../hooks/useDocument";
+import { BillDetailsModal } from "../components/BillDetailsModal"; // Import the new modal
 import {
   PieChart,
   Pie,
@@ -10,8 +11,8 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import { Loader2, Info } from "lucide-react";
-import { getCategoryIcon } from "../constants"; // Import the icon helper
+import { Loader2, Info, Eye, ShoppingBasket } from "lucide-react"; // Added Eye icon
+import { getCategoryIcon } from "../constants";
 
 // Helper function to get the start of the current month
 const getStartOfMonth = () => {
@@ -40,7 +41,22 @@ export const Dashboard = () => {
   const { userId, appId } = useAuth();
   const startOfMonth = useMemo(getStartOfMonth, []);
 
-  // Fetch purchases for the current month
+  // --- State for Bill Details Modal ---
+  const [isBillDetailsOpen, setIsBillDetailsOpen] = useState(false);
+  const [selectedBill, setSelectedBill] = useState(null);
+
+  const openBillDetails = (bill) => {
+      setSelectedBill(bill);
+      setIsBillDetailsOpen(true);
+  };
+
+  const closeBillDetails = () => {
+      setIsBillDetailsOpen(false);
+      setSelectedBill(null);
+  };
+  // --- End Modal State ---
+
+  // Fetch purchases for the current month (still needed for charts/totals)
   const {
     data: purchases,
     isLoading: isLoadingPurchases,
@@ -49,9 +65,25 @@ export const Dashboard = () => {
     userId && appId ? `artifacts/${appId}/users/${userId}/purchases` : null,
     {
       whereClauses: [["purchaseDate", ">=", startOfMonth]],
-      orderByClauses: [["purchaseDate", "desc"]],
+      // No ordering needed here as we primarily aggregate
     }
   );
+
+   // --- Fetch RECENT BILLS ---
+   const {
+       data: recentBills,
+       isLoading: isLoadingBills,
+       error: billsError,
+   } = useCollection(
+       userId && appId ? `artifacts/${appId}/users/${userId}/bills` : null,
+       {
+           // Order by creation time (or purchaseDate if preferred)
+           orderByClauses: [['createdAt', 'desc']],
+           docLimit: 5 // Limit to 5 recent bills
+       }
+   );
+   // --- End Fetch Bills ---
+
 
    // Fetch user profile for budget
    const { data: userProfile, isLoading: isLoadingProfile } = useDocument(
@@ -61,28 +93,28 @@ export const Dashboard = () => {
    const monthlyBudget = userProfile?.monthlyBudget;
 
 
-  // Calculate total spend
+  // Calculate total spend (remains the same, based on purchases)
   const totalSpend = useMemo(() => {
     return purchases
-      ? purchases.reduce((sum, item) => sum + (item.price || 0), 0) // Added safety check for item.price
+      ? purchases.reduce((sum, item) => sum + (item.price || 0), 0)
       : 0;
   }, [purchases]);
 
-   // Calculate budget progress
+   // Calculate budget progress (remains the same)
    const budgetProgress = useMemo(() => {
      if (monthlyBudget === undefined || monthlyBudget === null || monthlyBudget <= 0) {
-       return null; // No budget set or invalid budget
+       return null;
      }
      return (totalSpend / monthlyBudget) * 100;
    }, [totalSpend, monthlyBudget]);
 
 
-  // Process data for the category pie chart
+  // Process data for the category pie chart (remains the same, based on purchases)
   const categoryData = useMemo(() => {
     if (!purchases) return [];
     const grouped = purchases.reduce((acc, item) => {
       const category = item.category || "Other";
-      const price = item.price || 0; // Added safety check
+      const price = item.price || 0;
       if (!acc[category]) {
         acc[category] = 0;
       }
@@ -106,8 +138,8 @@ export const Dashboard = () => {
     "#eab308", // yellow-500
   ];
 
-  // We only show the main page loader if the profile is still loading
-  if (isLoadingProfile) {
+  // Show main loader only if profile OR initial bills are loading
+  if (isLoadingProfile || (isLoadingBills && !recentBills)) {
     return (
       <div className="flex justify-center items-center h-64">
         <Loader2 size={32} className="animate-spin text-icon" />
@@ -115,14 +147,16 @@ export const Dashboard = () => {
     );
   }
 
-  // Handle purchase-specific errors after profile loads
-  if (purchasesError) {
-    return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
-        <strong>Error:</strong> Failed to load dashboard purchase data. Please check console.
-      </div>
-    );
-  }
+  // Handle errors
+   if (purchasesError || billsError) {
+       console.error("Dashboard Data Error:", { purchasesError, billsError });
+       return (
+         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
+           <strong>Error:</strong> Failed to load some dashboard data. Please check console.
+         </div>
+       );
+   }
+
 
   return (
     <div className="space-y-6">
@@ -137,7 +171,6 @@ export const Dashboard = () => {
         >
           <div>
               <h2 className="text-lg font-semibold mb-1">Total Spend This Month</h2>
-              {/* Show loader only for purchase data here */}
               {isLoadingPurchases ? (
                    <div className="h-10 my-1 flex items-center">
                       <Loader2 size={24} className="animate-spin text-icon opacity-50" />
@@ -153,21 +186,19 @@ export const Dashboard = () => {
              <div>
                <div className="flex justify-between text-xs text-text-secondary mb-1">
                  <span>Budget: ${monthlyBudget.toFixed(2)}</span>
-                 {/* Show loader if purchases are still loading for percentage */}
                  <span>{isLoadingPurchases ? '...' : Math.max(0, budgetProgress || 0).toFixed(0)}% Used</span>
                </div>
                <div className="w-full bg-input rounded-full h-2.5">
                  <div
                    className="bg-primary h-2.5 rounded-full transition-all duration-300"
-                   style={{ width: `${isLoadingPurchases ? 0 : Math.min(100, Math.max(0, budgetProgress || 0))}%` }} // Show 0 width while loading
+                   style={{ width: `${isLoadingPurchases ? 0 : Math.min(100, Math.max(0, budgetProgress || 0))}%` }}
                  ></div>
                </div>
-                {(budgetProgress || 0) > 100 && !isLoadingPurchases && ( // Only show if not loading
+                {(budgetProgress || 0) > 100 && !isLoadingPurchases && (
                      <p className="text-xs text-red-500 mt-1 font-medium">Budget exceeded!</p>
                 )}
              </div>
            )}
-           {/* Only show "Set budget" if profile is loaded and no budget exists */}
            {(monthlyBudget === undefined || monthlyBudget === null || monthlyBudget <= 0) && !isLoadingProfile && (
                <p className="text-xs text-text-secondary mt-1">Set a budget in Settings to track progress.</p>
            )}
@@ -179,7 +210,6 @@ export const Dashboard = () => {
           className={`p-6 rounded-2xl bg-glass border border-border shadow-lg md:col-span-2 min-h-[300px] flex flex-col`}
         >
           <h2 className="text-lg font-semibold mb-2">Category Breakdown</h2>
-           {/* Show spinner specifically for this section */}
            {isLoadingPurchases ? (
                <LoadingSpinner />
            ) : purchases && purchases.length > 0 ? (
@@ -205,7 +235,7 @@ export const Dashboard = () => {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value, name) => [`$${(value || 0).toFixed(2)}`, name]} // Added safety check
+                      formatter={(value, name) => [`$${(value || 0).toFixed(2)}`, name]}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -215,41 +245,50 @@ export const Dashboard = () => {
           )}
         </div>
 
-        {/* Widget 3: Recent Purchases */}
+        {/* Widget 3: RECENT BILLS */}
         <div
           className={`p-6 rounded-2xl bg-glass border border-border shadow-lg md:col-span-3`}
         >
-          <h2 className="text-lg font-semibold mb-4">Recent Purchases</h2>
-           {/* Show spinner specifically for this section */}
-           {isLoadingPurchases ? (
+          <h2 className="text-lg font-semibold mb-4">Recent Bills</h2>
+           {isLoadingBills ? (
                <LoadingSpinner />
-           ) : purchases && purchases.length > 0 ? (
+           ) : recentBills && recentBills.length > 0 ? (
              <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-                {purchases.slice(0, 5).map((item) => {
-                    // Get the icon component for the category
-                    const Icon = getCategoryIcon(item.category);
+                {recentBills.map((bill) => {
+                    const formattedDate = bill.purchaseDate?.toDate ? bill.purchaseDate.toDate().toLocaleDateString() : 'N/A';
+                    const formattedTotal = bill.totalBill !== null && bill.totalBill !== undefined ? `$${bill.totalBill.toFixed(2)}` : '';
                     return (
                         <div
-                          key={item.id}
-                          className="flex justify-between items-center p-3 bg-input rounded-lg border border-border"
+                          key={bill.id}
+                          className="flex justify-between items-center p-3 bg-input rounded-lg border border-border hover:border-primary transition-colors cursor-pointer"
+                           onClick={() => openBillDetails(bill)} // Open modal on click
                         >
-                          <div className="flex items-center gap-3"> {/* Added flex container */}
-                            <Icon size={20} className="text-icon opacity-80 flex-shrink-0" /> {/* Render the icon */}
+                          <div className="flex items-center gap-3">
+                            <ShoppingBasket size={20} className="text-icon opacity-80 flex-shrink-0" />
                             <div>
-                              <p className="font-medium">{item.displayName}</p>
-                              <p className="text-xs text-text-secondary">{item.category}</p>
+                              <p className="font-medium">{bill.shopName}</p>
+                              <p className="text-xs text-text-secondary">
+                                  {formattedDate} - {bill.itemCount || 0} items {formattedTotal && `- ${formattedTotal}`}
+                              </p>
                             </div>
                           </div>
-                          <p className="font-semibold">${(item.price || 0).toFixed(2)}</p> {/* Added safety check */}
+                          <Eye size={18} className="text-text-secondary hover:text-primary"/>
                         </div>
                     );
                 })}
              </div>
            ) : (
-              <EmptyState message="No purchases logged this month." />
+              <EmptyState message="No bills logged yet. Add a purchase!" />
            )}
         </div>
       </div>
+
+       {/* Render Bill Details Modal */}
+       <BillDetailsModal
+           isOpen={isBillDetailsOpen}
+           onClose={closeBillDetails}
+           bill={selectedBill}
+       />
     </div>
   );
 };

@@ -15,16 +15,18 @@ import {
   // We'll need these later
 } from "firebase/auth";
 import {
-  // getFirestore, // <-- Unused for now
-  // We'll need these later
+  getFirestore, // <-- Un-commented
+  collection,
+  addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import {
-  // db, // <-- Unused for now
+  db, // <-- Un-commented
   auth,
   initializeAuth,
   // getUserId, // <-- Unused for now
   appId,
-} from "./firebaseConfig"; // <-- FIX: Removed .js extension
+} from "./firebaseConfig.js"; // <-- FIX: Re-added .js extension
 
 // --- Import Icons ---
 import {
@@ -174,7 +176,7 @@ export default function App() {
         userId={userId}
       >
         {/* This is our "Router" - it swaps the content based on state */}
-        {currentPage === "dashboard" && <Dashboard />}
+        {currentPage === "dashboard" && <Dashboard db={db} userId={userId} appId={appId} />}
         {currentPage === "smart-list" && <SmartList />}
         {currentPage === "reports" && <Reports />}
         {currentPage === "settings" && (
@@ -186,6 +188,9 @@ export default function App() {
       <AddPurchaseModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
+        db={db}
+        userId={userId}
+        appId={appId}
       />
     </ThemeProvider>
   );
@@ -390,7 +395,7 @@ const NavItem = ({ label, icon: Icon, isActive, onClick, isMobile }) => {
 // === 4. PAGE COMPONENTS (PLACEHOLDERS) ===
 
 // --- Dashboard ---
-const Dashboard = () => {
+const Dashboard = ({ db, userId, appId }) => {
   const { theme } = useTheme();
   return (
     <div className="space-y-6">
@@ -483,8 +488,65 @@ const Settings = ({ userId, appId }) => {
 // === 5. MODAL & HELPER COMPONENTS ===
 
 // --- AddPurchaseModal ---
-const AddPurchaseModal = ({ isOpen, onClose }) => {
+const AddPurchaseModal = ({ isOpen, onClose, db, userId, appId }) => {
   const { theme } = useTheme();
+  const [itemName, setItemName] = useState("");
+  const [price, setPrice] = useState("");
+  const [category, setCategory] = useState("Produce"); // Default category
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState(null); // For user-facing errors
+
+  const resetForm = () => {
+    setItemName("");
+    setPrice("");
+    setCategory("Produce");
+    setError(null);
+  };
+
+  const handleClose = () => {
+    if (isSaving) return; // Don't close while saving
+    resetForm();
+    onClose();
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null); // Clear previous errors
+
+    if (!db || !userId || !appId) {
+      console.error("Database connection or user not ready");
+      setError("Not connected. Please try again in a moment.");
+      return;
+    }
+
+    // Basic validation
+    if (!itemName.trim() || !price || isNaN(parseFloat(price)) || parseFloat(price) <= 0) {
+      console.error("Invalid input");
+      setError("Please enter a valid item name and price.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // Use the private data path
+      const collectionPath = `/artifacts/${appId}/users/${userId}/purchases`;
+      const docRef = await addDoc(collection(db, collectionPath), {
+        name: itemName.trim(),
+        price: parseFloat(price),
+        category: category,
+        purchaseDate: serverTimestamp(),
+        userId: userId,
+      });
+
+      console.log("Document written with ID: ", docRef.id);
+      handleClose(); // Reset form and close modal on success
+    } catch (err) {
+      console.error("Error adding document: ", err);
+      setError("Failed to save purchase. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -492,7 +554,7 @@ const AddPurchaseModal = ({ isOpen, onClose }) => {
     // Backdrop
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4"
-      onClick={onClose}
+      onClick={handleClose}
     >
       {/* Modal Content */}
       <div
@@ -502,21 +564,26 @@ const AddPurchaseModal = ({ isOpen, onClose }) => {
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold">Log New Purchase</h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className={`p-2 rounded-full hover:bg-black/10 dark:hover:bg-white/10`}
+            disabled={isSaving}
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Form */}
-        <form className="space-y-4">
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
             <label className="block text-sm font-medium mb-1">Item Name</label>
             <input
               type="text"
               placeholder="e.g., Organic Bananas"
               className={`w-full p-3 rounded-lg ${theme.input} border ${theme.border} focus:ring-2 focus:${theme.primary} focus:outline-none`}
+              value={itemName}
+              onChange={(e) => setItemName(e.target.value)}
+              disabled={isSaving}
+              required
             />
           </div>
 
@@ -525,8 +592,13 @@ const AddPurchaseModal = ({ isOpen, onClose }) => {
             <input
               type="number"
               step="0.01"
+              min="0.01" // Price should be greater than 0
               placeholder="$ 3.99"
               className={`w-full p-3 rounded-lg ${theme.input} border ${theme.border} focus:ring-2 focus:${theme.primary} focus:outline-none`}
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              disabled={isSaving}
+              required
             />
           </div>
 
@@ -534,6 +606,9 @@ const AddPurchaseModal = ({ isOpen, onClose }) => {
             <label className="block text-sm font-medium mb-1">Category</label>
             <select
               className={`w-full p-3 rounded-lg ${theme.input} border ${theme.border} focus:ring-2 focus:${theme.primary} focus:outline-none appearance-none`}
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              disabled={isSaving}
             >
               <option>Produce</option>
               <option>Dairy</option>
@@ -544,21 +619,32 @@ const AddPurchaseModal = ({ isOpen, onClose }) => {
             </select>
           </div>
 
+          {/* Error Message */}
+          {error && (
+            <p className="text-sm text-red-500 font-medium">{error}</p>
+          )}
+
           {/* Action Buttons */}
           <div className="flex justify-end gap-3 pt-4">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className={`px-5 py-2 rounded-lg font-medium hover:bg-black/10 dark:hover:bg-white/10 transition-colors`}
+              disabled={isSaving}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className={`flex items-center gap-2 px-5 py-2 rounded-lg font-medium ${theme.primary} ${theme.primaryText} ${theme.primaryHover} transition-colors`}
+              className={`flex items-center justify-center gap-2 px-5 py-2 rounded-lg font-medium ${theme.primary} ${theme.primaryText} ${theme.primaryHover} transition-colors disabled:opacity-70`}
+              disabled={isSaving}
             >
-              <Plus size={18} />
-              Save Purchase
+              {isSaving ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <Plus size={18} />
+              )}
+              {isSaving ? "Saving..." : "Save Purchase"}
             </button>
           </div>
         </form>

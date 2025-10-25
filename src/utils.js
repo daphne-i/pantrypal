@@ -1,13 +1,7 @@
-// src/utils.js
-
-/**
- * Formats a number as Indian Rupees (₹).
- * @param {number | null | undefined} amount - The amount to format.
- * @returns {string} Formatted currency string (e.g., "₹5,000.00") or empty string if amount is invalid.
- */
+// --- Currency Formatter ---
 export const formatCurrency = (amount) => {
-  if (amount === null || amount === undefined || isNaN(Number(amount))) return '';
-  // Using INR locale for Rupee symbol and Indian number formatting
+  if (amount === null || amount === undefined) return '';
+  // Using INR locale for Rupee symbol and formatting
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
@@ -16,26 +10,19 @@ export const formatCurrency = (amount) => {
   }).format(amount);
 };
 
-/**
- * Formats a Firestore Timestamp or Date object into "25th October 2025" style.
- * @param {object | Date | null | undefined} date - The Firestore Timestamp or Date object.
- * @returns {string} Formatted date string or 'N/A'/'Invalid Date'.
- */
+
+// --- Date Formatter ---
 export const formatDate = (date) => {
     if (!date) return 'N/A';
-
-    // Convert Firestore Timestamp to JS Date if necessary
+    // Handle both Firebase Timestamps and Date objects/strings
     const dateObj = date?.toDate ? date.toDate() : date instanceof Date ? date : new Date(date);
-
-    // Check if the resulting date is valid
     if (isNaN(dateObj)) return 'Invalid Date';
 
     // Custom formatting to get "25th October 2025" style
     const day = dateObj.getDate();
-    const month = dateObj.toLocaleDateString('en-GB', { month: 'long' }); // 'en-GB' often gives full month name
+    const month = dateObj.toLocaleDateString('en-GB', { month: 'long' });
     const year = dateObj.getFullYear();
 
-    // Determine the day suffix (st, nd, rd, th)
     let daySuffix = 'th';
     if (day === 1 || day === 21 || day === 31) daySuffix = 'st';
     else if (day === 2 || day === 22) daySuffix = 'nd';
@@ -43,3 +30,29 @@ export const formatDate = (date) => {
 
     return `${day}${daySuffix} ${month} ${year}`;
 };
+
+
+// --- Time Ago Formatter ---
+// Helper function to format dates as "X days ago"
+export const timeAgo = (date) => {
+  if (!date) return "N/A";
+  const now = new Date();
+  // Ensure we're working with a JS Date object
+  const dateObj = date?.toDate ? date.toDate() : date instanceof Date ? date : new Date(date);
+  if (isNaN(dateObj)) return 'Invalid Date';
+  
+  const seconds = Math.floor((now - dateObj) / 1000);
+  
+  let interval = seconds / 31536000;
+  if (interval > 1) return Math.floor(interval) + " years ago";
+  interval = seconds / 2592000;
+  if (interval > 1) return Math.floor(interval) + " months ago";
+  interval = seconds / 86400;
+  if (interval > 1) return Math.floor(interval) + " days ago";
+  interval = seconds / 3600;
+  if (interval > 1) return Math.floor(interval) + " hours ago";
+  interval = seconds / 60;
+  if (interval > 1) return Math.floor(interval) + " minutes ago";
+  return "Just now";
+};
+

@@ -1,17 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo } from "react"; // <-- Added useMemo here
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import toast from 'react-hot-toast';
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../hooks/useAuth";
 import { handleSaveItems } from "../firebaseUtils";
 import { CATEGORIES, UNITS, getCategoryIcon } from "../constants";
-import { Timestamp } from "firebase/firestore"; // Import Timestamp directly
+import { Timestamp, serverTimestamp } from "firebase/firestore"; // Import Timestamp directly and serverTimestamp
+import { formatCurrency } from '../utils'; // Import currency formatter
 import { X, Loader2, Plus, Check, Trash2, Edit2, Package, Hash, CircleDollarSign } from "lucide-react";
 
-// Helper to format currency (example, adjust as needed)
-const formatCurrency = (amount) => {
-    // Basic formatting, consider a library for more robust needs
-    return `$${Number(amount).toFixed(2)}`;
-}
 
 export const AddItemsModal = ({ isOpen, onClose, billId, billData }) => {
   const { theme } = useTheme();
@@ -86,8 +82,8 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billData }) => {
         unit: unit,
         category: category,
         price: itemPrice,
-        // Include purchaseDate from billData if available
-        purchaseDate: billData?.purchaseDate ? new Date(billData.purchaseDate) : null
+        // Include purchaseDate from billData if available (as JS Date)
+        purchaseDate: billData?.purchaseDate?.toDate ? billData.purchaseDate.toDate() : (billData?.purchaseDate instanceof Date ? billData.purchaseDate : null)
     };
 
     if (editingIndex !== null) {
@@ -143,15 +139,13 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billData }) => {
     const toastId = toast.loading(`Saving ${itemsToAdd.length} item(s)...`);
 
     try {
-        // Convert purchaseDate back to Timestamp before saving if needed,
-        // or let handleSaveItems handle it with serverTimestamp()
-        const itemsWithDate = itemsToAdd.map(item => ({
+        // Convert JS date back to Timestamp for saving
+        const itemsWithTimestamp = itemsToAdd.map(item => ({
             ...item,
-            // Pass the original date from billData if available, let Firestore convert
-            purchaseDate: billData?.purchaseDate ? Timestamp.fromDate(new Date(billData.purchaseDate)) : serverTimestamp()
+            purchaseDate: item.purchaseDate ? Timestamp.fromDate(item.purchaseDate) : serverTimestamp()
         }));
 
-        await handleSaveItems(itemsWithDate, billId, userId, appId);
+        await handleSaveItems(itemsWithTimestamp, billId, userId, appId);
         toast.success(`${itemsToAdd.length} item(s) saved successfully!`, { id: toastId });
         onClose(); // Close the modal on success
 
@@ -165,7 +159,7 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billData }) => {
 
   // Calculate total price of items added so far in this session
   const currentItemsTotal = useMemo(() => {
-    return itemsToAdd.reduce((sum, item) => sum + item.price, 0);
+    return itemsToAdd.reduce((sum, item) => sum + (item.price || 0), 0);
   }, [itemsToAdd]);
 
 
@@ -187,7 +181,7 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billData }) => {
           <div>
               <h2 className="text-2xl font-bold">Add Items to Purchase</h2>
               <p className="text-sm text-text-secondary">
-                  Shop: {billData?.shopName || 'N/A'} | Date: {billData?.purchaseDate ? new Date(billData.purchaseDate).toLocaleDateString() : 'N/A'}
+                  Shop: {billData?.shopName || 'N/A'} | Date: {billData?.purchaseDate?.toDate ? billData.purchaseDate.toDate().toLocaleDateString() : 'N/A'}
               </p>
           </div>
           <button
@@ -266,7 +260,7 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billData }) => {
                   type="number"
                   step="0.01"
                   min="0.01"
-                  placeholder="57.00"
+                  placeholder="57.00" // Example placeholder
                   className={`w-full p-2 pl-8 rounded-md bg-input border border-border focus:ring-1 focus:ring-primary focus:outline-none`}
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
@@ -304,7 +298,7 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billData }) => {
                                          {item.quantity} {item.unit} - {item.category}
                                      </p>
                                 </div>
-                                <p className="font-semibold text-sm mr-2">{formatCurrency(item.price)}</p>
+                                <p className="font-semibold text-sm mr-2">{formatCurrency(item.price || 0)}</p>
                                 <button
                                      onClick={() => handleEditItem(index)}
                                      className="p-1 text-blue-500 hover:text-blue-700 disabled:opacity-50"

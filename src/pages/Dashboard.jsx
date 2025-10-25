@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from "react"; // Added useState
+import React, { useState, useMemo } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../hooks/useAuth";
 import { useCollection } from "../hooks/useCollection";
 import { useDocument } from "../hooks/useDocument";
-import { BillDetailsModal } from "../components/BillDetailsModal"; // Import the new modal
+import { BillDetailsModal } from "../components/BillDetailsModal";
+import { formatCurrency } from '../utils'; // Import currency formatter
 import {
   PieChart,
   Pie,
@@ -11,7 +12,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import { Loader2, Info, Eye, ShoppingBasket } from "lucide-react"; // Added Eye icon
+import { Loader2, Info, Eye, ShoppingBasket } from "lucide-react";
 import { getCategoryIcon } from "../constants";
 
 // Helper function to get the start of the current month
@@ -41,7 +42,7 @@ export const Dashboard = () => {
   const { userId, appId } = useAuth();
   const startOfMonth = useMemo(getStartOfMonth, []);
 
-  // --- State for Bill Details Modal ---
+  // State for Bill Details Modal
   const [isBillDetailsOpen, setIsBillDetailsOpen] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
 
@@ -54,7 +55,6 @@ export const Dashboard = () => {
       setIsBillDetailsOpen(false);
       setSelectedBill(null);
   };
-  // --- End Modal State ---
 
   // Fetch purchases for the current month (still needed for charts/totals)
   const {
@@ -65,11 +65,10 @@ export const Dashboard = () => {
     userId && appId ? `artifacts/${appId}/users/${userId}/purchases` : null,
     {
       whereClauses: [["purchaseDate", ">=", startOfMonth]],
-      // No ordering needed here as we primarily aggregate
     }
   );
 
-   // --- Fetch RECENT BILLS ---
+   // Fetch RECENT BILLS
    const {
        data: recentBills,
        isLoading: isLoadingBills,
@@ -77,13 +76,10 @@ export const Dashboard = () => {
    } = useCollection(
        userId && appId ? `artifacts/${appId}/users/${userId}/bills` : null,
        {
-           // Order by creation time (or purchaseDate if preferred)
            orderByClauses: [['createdAt', 'desc']],
-           docLimit: 5 // Limit to 5 recent bills
+           docLimit: 5
        }
    );
-   // --- End Fetch Bills ---
-
 
    // Fetch user profile for budget
    const { data: userProfile, isLoading: isLoadingProfile } = useDocument(
@@ -93,14 +89,14 @@ export const Dashboard = () => {
    const monthlyBudget = userProfile?.monthlyBudget;
 
 
-  // Calculate total spend (remains the same, based on purchases)
+  // Calculate total spend
   const totalSpend = useMemo(() => {
     return purchases
       ? purchases.reduce((sum, item) => sum + (item.price || 0), 0)
       : 0;
   }, [purchases]);
 
-   // Calculate budget progress (remains the same)
+   // Calculate budget progress
    const budgetProgress = useMemo(() => {
      if (monthlyBudget === undefined || monthlyBudget === null || monthlyBudget <= 0) {
        return null;
@@ -109,7 +105,7 @@ export const Dashboard = () => {
    }, [totalSpend, monthlyBudget]);
 
 
-  // Process data for the category pie chart (remains the same, based on purchases)
+  // Process data for the category pie chart
   const categoryData = useMemo(() => {
     if (!purchases) return [];
     const grouped = purchases.reduce((acc, item) => {
@@ -177,7 +173,7 @@ export const Dashboard = () => {
                    </div>
               ) : (
                   <p className="text-4xl font-bold mb-4">
-                    ${totalSpend.toFixed(2)}
+                    {formatCurrency(totalSpend)} {/* Use formatter */}
                   </p>
               )}
           </div>
@@ -185,7 +181,7 @@ export const Dashboard = () => {
            {monthlyBudget !== undefined && monthlyBudget !== null && monthlyBudget > 0 && (
              <div>
                <div className="flex justify-between text-xs text-text-secondary mb-1">
-                 <span>Budget: ${monthlyBudget.toFixed(2)}</span>
+                 <span>Budget: {formatCurrency(monthlyBudget)}</span> {/* Use formatter */}
                  <span>{isLoadingPurchases ? '...' : Math.max(0, budgetProgress || 0).toFixed(0)}% Used</span>
                </div>
                <div className="w-full bg-input rounded-full h-2.5">
@@ -225,7 +221,7 @@ export const Dashboard = () => {
                       fill="#8884d8"
                       dataKey="value"
                       labelLine={false}
-                       label={({ name, percent, value }) => `${name} ($${value.toFixed(2)})`}
+                       label={({ name, percent, value }) => `${name} (${formatCurrency(value)})`} // Use formatter
                     >
                       {categoryData.map((entry, index) => (
                         <Cell
@@ -235,7 +231,7 @@ export const Dashboard = () => {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value, name) => [`$${(value || 0).toFixed(2)}`, name]}
+                      formatter={(value, name) => [formatCurrency(value || 0), name]} // Use formatter
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -255,13 +251,13 @@ export const Dashboard = () => {
            ) : recentBills && recentBills.length > 0 ? (
              <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
                 {recentBills.map((bill) => {
-                    const formattedDate = bill.purchaseDate?.toDate ? bill.purchaseDate.toDate().toLocaleDateString() : 'N/A';
-                    const formattedTotal = bill.totalBill !== null && bill.totalBill !== undefined ? `$${bill.totalBill.toFixed(2)}` : '';
+                    const formattedDate = bill.purchaseDate?.toDate ? bill.purchaseDate.toDate().toLocaleDateString() : 'N/A'; // Use simple date here
+                    const formattedTotal = bill.totalBill !== null && bill.totalBill !== undefined ? formatCurrency(bill.totalBill) : ''; // Use formatter
                     return (
                         <div
                           key={bill.id}
                           className="flex justify-between items-center p-3 bg-input rounded-lg border border-border hover:border-primary transition-colors cursor-pointer"
-                           onClick={() => openBillDetails(bill)} // Open modal on click
+                           onClick={() => openBillDetails(bill)}
                         >
                           <div className="flex items-center gap-3">
                             <ShoppingBasket size={20} className="text-icon opacity-80 flex-shrink-0" />

@@ -2,13 +2,8 @@ import React from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useCollection } from '../hooks/useCollection';
 import { getCategoryIcon } from '../constants';
+import { formatCurrency, formatDate } from '../utils'; // Import formatters
 import { X, Loader2, Info, ShoppingBasket, Calendar, DollarSign, Package } from 'lucide-react';
-
-// Helper to format currency (example, adjust as needed)
-const formatCurrency = (amount) => {
-    // Basic formatting, consider a library for more robust needs
-    return `$${Number(amount).toFixed(2)}`;
-}
 
 // Simple component for empty states
 const EmptyState = ({ message }) => (
@@ -44,8 +39,8 @@ export const BillDetailsModal = ({ isOpen, onClose, bill }) => {
 
     if (!isOpen || !bill) return null;
 
-    // Safely format date
-    const formattedDate = bill.purchaseDate?.toDate ? bill.purchaseDate.toDate().toLocaleDateString() : 'N/A';
+    // Format date and total using utils
+    const formattedDate = formatDate(bill.purchaseDate);
     const formattedTotal = bill.totalBill !== null && bill.totalBill !== undefined ? formatCurrency(bill.totalBill) : 'Not set';
 
     return (
@@ -78,11 +73,11 @@ export const BillDetailsModal = ({ isOpen, onClose, bill }) => {
                 </div>
                  <div className="flex items-center gap-2">
                     <Calendar size={16} className="text-text-secondary"/>
-                    <span>Date: <span className="font-medium">{formattedDate}</span></span>
+                    <span>Date: <span className="font-medium">{formattedDate}</span></span> {/* Use formatted date */}
                 </div>
                  <div className="flex items-center gap-2">
                     <DollarSign size={16} className="text-text-secondary"/>
-                    <span>Total Bill: <span className="font-medium">{formattedTotal}</span></span>
+                    <span>Total Bill: <span className="font-medium">{formattedTotal}</span></span> {/* Use formatted total */}
                 </div>
                  <div className="flex items-center gap-2">
                     <Package size={16} className="text-text-secondary"/>
@@ -112,7 +107,7 @@ export const BillDetailsModal = ({ isOpen, onClose, bill }) => {
                                             {item.quantity || ''} {item.unit || ''} - {item.category || 'Other'}
                                         </p>
                                     </div>
-                                    <p className="font-semibold text-sm mr-2">{formatCurrency(item.price || 0)}</p>
+                                    <p className="font-semibold text-sm mr-2">{formatCurrency(item.price || 0)}</p> {/* Use formatted price */}
                                     {/* Add Edit/Delete buttons here later if needed */}
                                 </div>
                             );
@@ -138,3 +133,4 @@ export const BillDetailsModal = ({ isOpen, onClose, bill }) => {
         </div>
     );
 };
+

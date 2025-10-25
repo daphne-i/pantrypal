@@ -13,16 +13,19 @@ import {
   SprayCan, // Household
   Sparkles, // Personal Care
   Package, // General Packaging
-  PlusSquare, // Add icon
+  PlusSquare,
+  HouseHeart,
+  Carrot,
+  Croissant, // Add icon
 } from 'lucide-react';
 
 // Sorted Categories with Icons
 export const CATEGORIES = [
-  { name: 'Bakery', icon: Wheat },
+  { name: 'Bakery', icon: Croissant },
   { name: 'Beverages', icon: GlassWater },
   { name: 'Dairy', icon: Milk },
   { name: 'Fruits', icon: Apple },
-  { name: 'Household', icon: SprayCan },
+  { name: 'Household', icon: HouseHeart },
   { name: 'Meat & Egg', icon: Beef },
   { name: 'Other', icon: ShoppingCart },
   { name: 'Personal Care', icon: Sparkles },
@@ -30,7 +33,7 @@ export const CATEGORIES = [
   { name: 'Snacks', icon: Cookie },
   { name: 'Spices', icon: CookingPot },
   { name: 'Staples', icon: Wheat }, // Re-using Wheat, consider a different one if available
-  { name: 'Vegetables', icon: Vegan },
+  { name: 'Vegetables', icon: Carrot },
 ].sort((a, b) => a.name.localeCompare(b.name)); // Ensure alphabetical sorting
 
 // Default Units

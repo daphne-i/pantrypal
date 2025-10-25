@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../hooks/useAuth";
 import { useCollection } from "../hooks/useCollection";
+import { useDocument } from "../hooks/useDocument"; // <-- Added
 import {
   PieChart,
   Pie,
@@ -9,7 +10,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import { Loader2 } from "lucide-react";
+import { Loader2, DollarSign } from "lucide-react"; // <-- Added DollarSign
 
 // Helper function to get the start of the current month
 const getStartOfMonth = () => {
@@ -20,13 +21,13 @@ const getStartOfMonth = () => {
 export const Dashboard = () => {
   const { theme } = useTheme();
   const { userId, appId } = useAuth();
-  const startOfMonth = useMemo(getStartOfMonth, []); // <-- FIX was here
+  const startOfMonth = useMemo(getStartOfMonth, []);
 
   // Fetch purchases for the current month
   const {
     data: purchases,
-    isLoading,
-    error,
+    isLoading: isLoadingPurchases, // <-- Renamed
+    error: errorPurchases,         // <-- Renamed
   } = useCollection(
     `artifacts/${appId}/users/${userId}/purchases`,
     {
@@ -35,12 +36,28 @@ export const Dashboard = () => {
     }
   );
 
+  // Fetch user profile to get the budget
+  const {
+    data: userProfile,
+    isLoading: isLoadingProfile, // <-- Renamed
+    error: errorProfile,         // <-- Renamed
+  } = useDocument(
+    `artifacts/${appId}/users/${userId}/profile`,
+    userId
+  );
+
   // Calculate total spend
   const totalSpend = useMemo(() => {
     return purchases
       ? purchases.reduce((sum, item) => sum + item.price, 0)
       : 0;
   }, [purchases]);
+
+  // Get budget from profile, default to 0 if not set
+  const monthlyBudget = userProfile?.monthlyBudget || 0;
+  const budgetRemaining = monthlyBudget - totalSpend;
+  const budgetPercentage = monthlyBudget > 0 ? (totalSpend / monthlyBudget) * 100 : 0;
+
 
   // Process data for the category pie chart
   const categoryData = useMemo(() => {
@@ -69,6 +86,11 @@ export const Dashboard = () => {
     "#22c55e",
   ];
 
+  // Combine loading states
+  const isLoading = isLoadingPurchases || isLoadingProfile;
+  const error = errorPurchases || errorProfile;
+
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -80,7 +102,7 @@ export const Dashboard = () => {
   if (error) {
     return (
       <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
-        <strong>Error:</strong> Failed to load dashboard data.
+        <strong>Error:</strong> Failed to load dashboard data. {error.message}
       </div>
     );
   }
@@ -88,11 +110,11 @@ export const Dashboard = () => {
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold">Dashboard</h1>
-      
+
       {/* Responsive Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* Widget 1: Total Spend */}
+
+        {/* Widget 1: Total Spend & Budget */}
         <div
           className={`p-6 rounded-2xl bg-glass border border-border shadow-lg md:col-span-1`}
         >
@@ -100,6 +122,24 @@ export const Dashboard = () => {
           <p className="text-4xl font-bold">
             ${totalSpend.toFixed(2)}
           </p>
+          {/* Budget Progress */}
+          {monthlyBudget > 0 && (
+            <div className="mt-4">
+              <div className="flex justify-between text-xs mb-1">
+                <span>Budget: ${monthlyBudget.toFixed(2)}</span>
+                <span>Remaining: ${budgetRemaining.toFixed(2)}</span>
+              </div>
+              <div className="w-full bg-input rounded-full h-2.5">
+                <div
+                  className={`bg-primary h-2.5 rounded-full ${budgetPercentage > 100 ? 'bg-red-500' : ''}`}
+                  style={{ width: `${Math.min(budgetPercentage, 100)}%` }}
+                ></div>
+              </div>
+               {budgetRemaining < 0 && (
+                 <p className="text-xs text-red-500 mt-1">Over budget!</p>
+               )}
+            </div>
+          )}
         </div>
 
         {/* Widget 2: Category Breakdown */}
@@ -143,7 +183,7 @@ export const Dashboard = () => {
           <h2 className="text-lg font-semibold mb-4">Recent Purchases</h2>
           <div className="space-y-3">
             {purchases && purchases.length > 0 ? (
-              purchases.slice(0, 5).map((item) => ( 
+              purchases.slice(0, 5).map((item) => (
                 <div
                   key={item.id}
                   className="flex justify-between items-center p-3 bg-input rounded-lg"
@@ -164,3 +204,4 @@ export const Dashboard = () => {
     </div>
   );
 };
+

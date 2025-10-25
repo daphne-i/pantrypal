@@ -11,6 +11,7 @@ import {
   Tooltip,
 } from "recharts";
 import { Loader2, Info } from "lucide-react";
+import { getCategoryIcon } from "../constants"; // Import the icon helper
 
 // Helper function to get the start of the current month
 const getStartOfMonth = () => {
@@ -63,7 +64,7 @@ export const Dashboard = () => {
   // Calculate total spend
   const totalSpend = useMemo(() => {
     return purchases
-      ? purchases.reduce((sum, item) => sum + item.price, 0)
+      ? purchases.reduce((sum, item) => sum + (item.price || 0), 0) // Added safety check for item.price
       : 0;
   }, [purchases]);
 
@@ -81,10 +82,11 @@ export const Dashboard = () => {
     if (!purchases) return [];
     const grouped = purchases.reduce((acc, item) => {
       const category = item.category || "Other";
+      const price = item.price || 0; // Added safety check
       if (!acc[category]) {
         acc[category] = 0;
       }
-      acc[category] += item.price;
+      acc[category] += price;
       return acc;
     }, {});
 
@@ -152,15 +154,15 @@ export const Dashboard = () => {
                <div className="flex justify-between text-xs text-text-secondary mb-1">
                  <span>Budget: ${monthlyBudget.toFixed(2)}</span>
                  {/* Show loader if purchases are still loading for percentage */}
-                 <span>{isLoadingPurchases ? '...' : Math.max(0, budgetProgress).toFixed(0)}% Used</span>
+                 <span>{isLoadingPurchases ? '...' : Math.max(0, budgetProgress || 0).toFixed(0)}% Used</span>
                </div>
                <div className="w-full bg-input rounded-full h-2.5">
                  <div
                    className="bg-primary h-2.5 rounded-full transition-all duration-300"
-                   style={{ width: `${isLoadingPurchases ? 0 : Math.min(100, Math.max(0, budgetProgress))}%` }} // Show 0 width while loading
+                   style={{ width: `${isLoadingPurchases ? 0 : Math.min(100, Math.max(0, budgetProgress || 0))}%` }} // Show 0 width while loading
                  ></div>
                </div>
-                {budgetProgress > 100 && !isLoadingPurchases && ( // Only show if not loading
+                {(budgetProgress || 0) > 100 && !isLoadingPurchases && ( // Only show if not loading
                      <p className="text-xs text-red-500 mt-1 font-medium">Budget exceeded!</p>
                 )}
              </div>
@@ -203,7 +205,7 @@ export const Dashboard = () => {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value, name) => [`$${value.toFixed(2)}`, name]}
+                      formatter={(value, name) => [`$${(value || 0).toFixed(2)}`, name]} // Added safety check
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -223,18 +225,25 @@ export const Dashboard = () => {
                <LoadingSpinner />
            ) : purchases && purchases.length > 0 ? (
              <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
-                {purchases.slice(0, 5).map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex justify-between items-center p-3 bg-input rounded-lg border border-border"
-                    >
-                      <div>
-                        <p className="font-medium">{item.displayName}</p>
-                        <p className="text-xs text-text-secondary">{item.category}</p>
-                      </div>
-                      <p className="font-semibold">${item.price.toFixed(2)}</p>
-                    </div>
-                ))}
+                {purchases.slice(0, 5).map((item) => {
+                    // Get the icon component for the category
+                    const Icon = getCategoryIcon(item.category);
+                    return (
+                        <div
+                          key={item.id}
+                          className="flex justify-between items-center p-3 bg-input rounded-lg border border-border"
+                        >
+                          <div className="flex items-center gap-3"> {/* Added flex container */}
+                            <Icon size={20} className="text-icon opacity-80 flex-shrink-0" /> {/* Render the icon */}
+                            <div>
+                              <p className="font-medium">{item.displayName}</p>
+                              <p className="text-xs text-text-secondary">{item.category}</p>
+                            </div>
+                          </div>
+                          <p className="font-semibold">${(item.price || 0).toFixed(2)}</p> {/* Added safety check */}
+                        </div>
+                    );
+                })}
              </div>
            ) : (
               <EmptyState message="No purchases logged this month." />

@@ -2,13 +2,15 @@ import React, { useState } from "react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { useAuth } from "./hooks/useAuth";
 import { Layout } from "./components/Layout";
-import { AddPurchaseModal } from "./components/AddPurchaseModal";
+// Import the new Modals
+import { AddBillModal } from "./components/AddBillModal";
+import { AddItemsModal } from "./components/AddItemsModal";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { Dashboard } from "./pages/Dashboard";
 import { SmartList } from "./pages/SmartList";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
-import { Toaster } from 'react-hot-toast'; // <-- Import Toaster
+import { Toaster } from 'react-hot-toast';
 
 // Auth context provider (no changes)
 const AuthContext = React.createContext();
@@ -29,8 +31,29 @@ export default function AppWrapper() {
 
 function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const { isAuthReady } = useAuthContext();
+
+  // State for the modals
+  const [isAddBillOpen, setIsAddBillOpen] = useState(false);
+  const [isAddItemsOpen, setIsAddItemsOpen] = useState(false);
+  const [currentBillId, setCurrentBillId] = useState(null);
+  const [currentBillData, setCurrentBillData] = useState(null); // Store shop/date
+
+   // Function called by AddBillModal on successful save
+   const handleBillCreated = (billId, billData) => {
+       setCurrentBillId(billId);
+       setCurrentBillData(billData); // Pass bill data to items modal
+       setIsAddBillOpen(false); // Close bill modal
+       setIsAddItemsOpen(true); // Open items modal immediately
+   };
+
+   // Function to close the AddItemsModal
+   const handleCloseAddItems = () => {
+       setIsAddItemsOpen(false);
+       setCurrentBillId(null);
+       setCurrentBillData(null);
+   };
+
 
   if (!isAuthReady) {
     return <LoadingScreen />;
@@ -38,38 +61,26 @@ function App() {
 
   return (
     <ThemeProvider>
-       {/* Add Toaster component here - manages rendering toasts */}
        <Toaster
          position="top-center"
          reverseOrder={false}
          toastOptions={{
-           duration: 3000, // Default duration
+           duration: 3000,
            style: {
-             background: 'var(--color-glass)', // Use theme variable
-             color: 'var(--color-text)',       // Use theme variable
-             border: '1px solid var(--color-border)', // Use theme variable
+             background: 'var(--color-glass)',
+             color: 'var(--color-text)',
+             border: '1px solid var(--color-border)',
              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
            },
-           success: {
-             duration: 2000, // Shorter duration for success
-             iconTheme: {
-               primary: '#22c55e', // Green checkmark
-               secondary: 'white',
-             },
-           },
-           error: {
-             duration: 4000, // Longer for errors
-              iconTheme: {
-               primary: '#ef4444', // Red X
-               secondary: 'white',
-             },
-           },
+           success: { duration: 2000, iconTheme: { primary: '#22c55e', secondary: 'white' } },
+           error: { duration: 4000, iconTheme: { primary: '#ef4444', secondary: 'white' } },
+           loading: { iconTheme: { primary: 'var(--color-primary)', secondary: 'transparent' } } // Style loading toast
          }}
        />
       <Layout
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}
-        setIsModalOpen={setIsModalOpen}
+        setIsModalOpen={setIsAddBillOpen} // FAB now opens AddBillModal
       >
         {/* Page "Router" */}
         {currentPage === "dashboard" && <Dashboard />}
@@ -78,11 +89,21 @@ function App() {
         {currentPage === "settings" && <Settings />}
       </Layout>
 
-      {/* Global Modal */}
-      <AddPurchaseModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+      {/* Render Modals */}
+      <AddBillModal
+        isOpen={isAddBillOpen}
+        onClose={() => setIsAddBillOpen(false)}
+        onBillCreated={handleBillCreated}
       />
+
+       <AddItemsModal
+         isOpen={isAddItemsOpen}
+         onClose={handleCloseAddItems}
+         billId={currentBillId}
+         billData={currentBillData} // Pass bill data down
+       />
+
     </ThemeProvider>
   );
 }
+

@@ -2,11 +2,11 @@ import React, { useState, useMemo } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../hooks/useAuth";
 import { useCollection } from "../hooks/useCollection";
-import { Loader2, Search } from "lucide-react";
+import { Loader2, Search, Info } from "lucide-react";
 
-// Helper function to format dates as "X days ago"
+// Helper function to format dates as "X days ago" (no changes)
 const timeAgo = (date) => {
-  if (!date) return "N/A";
+  if (!date?.toDate) return "N/A";
   const now = new Date();
   const seconds = Math.floor((now - date.toDate()) / 1000);
 
@@ -23,26 +23,43 @@ const timeAgo = (date) => {
   return "Just now";
 };
 
+// Simple component for empty states (no changes)
+const EmptyState = ({ message }) => (
+    <div className="flex flex-col items-center justify-center text-center text-text-secondary py-10">
+        <Info size={32} className="mb-2 opacity-50" />
+        <p>{message}</p>
+    </div>
+);
+
+// Simple component for loading state within a section (copied from Dashboard)
+const LoadingSpinner = () => (
+    <div className="flex justify-center items-center py-10">
+        <Loader2 size={24} className="animate-spin text-icon opacity-70" />
+    </div>
+);
+
+
 export const SmartList = () => {
   const { theme } = useTheme();
   const { userId, appId } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Fetch all unique items, ordered by last purchase date
+  // Fetch all unique items
   const {
     data: uniqueItems,
     isLoading,
     error,
   } = useCollection(
-    `artifacts/${appId}/users/${userId}/unique_items`,
+    userId && appId ? `artifacts/${appId}/users/${userId}/unique_items` : null,
     {
       orderByClauses: [["lastPurchaseDate", "desc"]],
     }
   );
 
-  // Client-side filtering based on search term
+  // Client-side filtering
   const filteredItems = useMemo(() => {
     if (!uniqueItems) return [];
+    if (!searchTerm) return uniqueItems;
     return uniqueItems.filter((item) =>
       item.displayName.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -67,18 +84,14 @@ export const SmartList = () => {
         />
       </div>
 
-      {/* Item List */}
+      {/* Item List Container */}
       <div
-        className={`p-6 rounded-2xl bg-glass border border-border shadow-lg space-y-4`}
+        className={`p-6 rounded-2xl bg-glass border border-border shadow-lg space-y-4 min-h-[200px]`} // Added min-height
       >
-        {isLoading && (
-          <div className="flex justify-center items-center h-48">
-            <Loader2 size={32} className="animate-spin text-icon" />
-          </div>
-        )}
+        {isLoading && <LoadingSpinner /> /* Show spinner inside container */}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
-            <strong>Error:</strong> Failed to load smart list.
+            <strong>Error:</strong> Failed to load smart list. Check console.
           </div>
         )}
         {!isLoading && !error && (
@@ -88,9 +101,9 @@ export const SmartList = () => {
                 <SmartListItem key={item.id} item={item} />
               ))
             ) : (
-              <p className="text-center py-10">
-                No items found. Start logging purchases to build your list!
-              </p>
+              <EmptyState
+                message={searchTerm ? "No items match your search." : "No items found. Start logging purchases!"}
+              />
             )}
           </>
         )}
@@ -99,7 +112,7 @@ export const SmartList = () => {
   );
 };
 
-// Smart List Item Component
+// Smart List Item Component (no changes)
 const SmartListItem = ({ item }) => {
   return (
     <div
@@ -111,16 +124,17 @@ const SmartListItem = ({ item }) => {
           Last bought: {timeAgo(item.lastPurchaseDate)}
         </p>
         <p className="text-xs text-text-secondary">
-          Purchased {item.purchaseCount} times
+          Purchased {item.purchaseCount || 1} {item.purchaseCount === 1 ? 'time' : 'times'}
         </p>
       </div>
       <div>
         <span
-           className={`text-xs font-medium px-2 py-1 rounded-full bg-primary/20 text-icon`} // <-- FIX: Removed the invalid comment
+           className={`text-xs font-medium px-2 py-1 rounded-full bg-primary/20 text-icon`}
          >
-           {item.category}
-         </span>
+           {item.category || 'Other'}
+        </span>
       </div>
     </div>
   );
 };
+

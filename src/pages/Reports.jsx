@@ -1,99 +1,138 @@
 import React, { useState, useMemo } from "react";
+import toast from 'react-hot-toast';
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../hooks/useAuth";
 import { useCollection } from "../hooks/useCollection";
 import { downloadCSV } from "../firebaseUtils"; // <-- Import CSV utility
-import { Loader2, Download } from "lucide-react";
+import { Loader2, Download, ChevronLeft, ChevronRight, Info } from "lucide-react"; // <-- Added icons
 
-// Helper to get month name and year
-const getMonthYearString = (date) => {
-  return date.toLocaleString('default', { month: 'long', year: 'numeric' });
-};
-
-// Helper to get start and end of a month
-const getMonthRange = (year, month) => {
+// Helper function to get the start and end of a given month
+const getMonthBounds = (year, month) => {
   const start = new Date(year, month, 1);
   const end = new Date(year, month + 1, 0, 23, 59, 59, 999); // End of the last day
   return { start, end };
 };
 
+// Simple component for empty states
+const EmptyState = ({ message }) => (
+    <div className="flex flex-col items-center justify-center text-center text-text-secondary py-10">
+        <Info size={32} className="mb-2 opacity-50" />
+        <p>{message}</p>
+    </div>
+);
 
 export const Reports = () => {
   const { theme } = useTheme();
   const { userId, appId } = useAuth();
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth()).padStart(2, '0')}`; // Format YYYY-MM (month is 0-indexed)
-  });
+  const [currentDate, setCurrentDate] = useState(new Date());
 
-  const { year, month } = useMemo(() => {
-    const [y, m] = selectedMonth.split('-');
-    return { year: parseInt(y), month: parseInt(m) };
-  }, [selectedMonth]);
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth(); // 0-indexed (0 = January)
 
-  const { start, end } = useMemo(() => getMonthRange(year, month), [year, month]);
+  // Calculate month bounds for the query
+  const { start: startOfMonth, end: endOfMonth } = useMemo(
+    () => getMonthBounds(currentYear, currentMonth),
+    [currentYear, currentMonth]
+  );
 
-  // Fetch purchases for the *selected* month
+  // Format month name for display
+  const monthName = useMemo(
+    () => currentDate.toLocaleString('default', { month: 'long', year: 'numeric' }),
+    [currentDate]
+  );
+
+  // Fetch purchases for the selected month
   const {
     data: purchases,
     isLoading,
     error,
   } = useCollection(
-    `artifacts/${appId}/users/${userId}/purchases`,
+    userId && appId ? `artifacts/${appId}/users/${userId}/purchases` : null,
     {
       whereClauses: [
-        ["purchaseDate", ">=", start],
-        ["purchaseDate", "<=", end]
+        ["purchaseDate", ">=", startOfMonth],
+        ["purchaseDate", "<=", endOfMonth],
       ],
-      orderByClauses: [["purchaseDate", "desc"]], // Keep ordering consistent
+      orderByClauses: [["purchaseDate", "desc"]], // Keep latest first for display
     }
   );
 
-  const handleExport = () => {
-    if (!purchases || purchases.length === 0) {
-      alert("No data available to export for this month."); // Consider a modal later
-      return;
-    }
-    // Convert Timestamps before exporting
-    const dataToExport = purchases.map(p => ({
-      ...p,
-      purchaseDate: p.purchaseDate.toDate().toISOString(), // Convert Timestamp to ISO string
-    }));
-    const monthYear = getMonthYearString(start);
-    downloadCSV(dataToExport, `PantryPal_Report_${monthYear.replace(' ', '_')}.csv`);
+  // Calculate total spend for the selected month
+  const totalSpend = useMemo(() => {
+    return purchases
+      ? purchases.reduce((sum, item) => sum + item.price, 0)
+      : 0;
+  }, [purchases]);
+
+  // Handle month navigation
+  const goToPreviousMonth = () => {
+    setCurrentDate(new Date(currentYear, currentMonth - 1, 15)); // Go to middle of prev month
   };
 
-  const monthYearDisplay = useMemo(() => getMonthYearString(start), [start]);
+  const goToNextMonth = () => {
+    setCurrentDate(new Date(currentYear, currentMonth + 1, 15)); // Go to middle of next month
+  };
 
+  // Check if next month is in the future
+  const isFutureMonth = useMemo(() => {
+     const nextMonthStart = new Date(currentYear, currentMonth + 1, 1);
+     return nextMonthStart > new Date();
+  }, [currentYear, currentMonth]);
+
+
+   // Handle CSV Export
+   const handleExport = () => {
+       const filename = `PantryPal_Report_${currentYear}_${String(currentMonth + 1).padStart(2, '0')}.csv`;
+       const success = downloadCSV(purchases, filename);
+       if (success) {
+           toast.success("CSV export started.");
+       } else if (purchases && purchases.length === 0) {
+           toast.error("No data available to export for this month.");
+       } else {
+           toast.error("CSV export failed. See console for details.");
+       }
+   };
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Reports</h1>
-        {/* Month Selector */}
-        <input
-          type="month"
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
-          className={`p-2 rounded-lg bg-input border border-border focus:ring-2 focus:ring-primary focus:outline-none`}
-        />
-      </div>
+      <h1 className="text-3xl font-bold">Monthly Reports</h1>
 
-      <div
-        className={`p-6 rounded-2xl bg-glass border border-border shadow-lg space-y-4`}
-      >
-        <div className="flex justify-between items-center mb-4">
-           <h2 className="text-xl font-semibold">Monthly Summary: {monthYearDisplay}</h2>
+      {/* Month Navigator and Export Button */}
+      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 p-4 rounded-lg bg-input border border-border">
+          <div className="flex items-center gap-2">
+               <button
+                 onClick={goToPreviousMonth}
+                 className="p-2 rounded-md hover:bg-black/10 dark:hover:bg-white/10"
+                 aria-label="Previous Month"
+               >
+                 <ChevronLeft size={20} />
+               </button>
+               <span className="font-semibold text-lg w-36 text-center">{monthName}</span>
+               <button
+                  onClick={goToNextMonth}
+                  disabled={isFutureMonth} // Disable if next month is in the future
+                  className="p-2 rounded-md hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Next Month"
+               >
+                  <ChevronRight size={20} />
+                </button>
+           </div>
            <button
              onClick={handleExport}
-             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium bg-primary text-primary-text primary-hover transition-colors ${!purchases || purchases.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-             disabled={!purchases || purchases.length === 0}
+             disabled={isLoading || !purchases || purchases.length === 0}
+             className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium bg-primary text-primary-text primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto"
            >
-             <Download size={18} />
-             Export CSV
-           </button>
-        </div>
+              <Download size={18} />
+              Export CSV
+            </button>
+      </div>
 
+
+      {/* Report Summary */}
+      <div
+        className={`p-6 rounded-2xl bg-glass border border-border shadow-lg`}
+      >
+        <h2 className="text-xl font-semibold mb-4">Summary for {monthName}</h2>
         {isLoading && (
           <div className="flex justify-center items-center h-48">
             <Loader2 size={32} className="animate-spin text-icon" />
@@ -101,42 +140,34 @@ export const Reports = () => {
         )}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
-            <strong>Error:</strong> Failed to load report data. {error.message}
+            <strong>Error:</strong> Failed to load report data. Check console.
           </div>
         )}
         {!isLoading && !error && (
           <>
-            {purchases && purchases.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="p-2">Date</th>
-                      <th className="p-2">Item</th>
-                      <th className="p-2">Category</th>
-                      <th className="p-2 text-right">Price</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+            <p className="mb-4">
+                Total Spend: <span className="font-bold text-2xl">${totalSpend.toFixed(2)}</span>
+            </p>
+            <h3 className="text-lg font-semibold mb-3">Purchases ({purchases?.length || 0})</h3>
+             {purchases && purchases.length > 0 ? (
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-2"> {/* Added scroll */}
                     {purchases.map((item) => (
-                      <tr key={item.id} className="border-b border-border/50 hover:bg-black/5 dark:hover:bg-white/5">
-                        <td className="p-2 text-sm">{item.purchaseDate?.toDate().toLocaleDateString()}</td>
-                        <td className="p-2">{item.displayName}</td>
-                        <td className="p-2">
-                           <span className={`text-xs font-medium px-2 py-1 rounded-full bg-primary/20 text-icon`}>
-                             {item.category}
-                           </span>
-                        </td>
-                        <td className="p-2 text-right font-semibold">${item.price.toFixed(2)}</td>
-                      </tr>
+                      <div
+                        key={item.id}
+                        className="flex justify-between items-center p-3 bg-input rounded-lg border border-border"
+                      >
+                         <div>
+                            <p className="font-medium">{item.displayName}</p>
+                             <p className="text-xs text-text-secondary">
+                                {item.purchaseDate?.toDate ? item.purchaseDate.toDate().toLocaleDateString() : 'N/A'} - {item.category}
+                             </p>
+                         </div>
+                         <p className="font-semibold">${item.price.toFixed(2)}</p>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                </div>
             ) : (
-              <p className="text-center py-10">
-                No purchases logged for {monthYearDisplay}.
-              </p>
+                <EmptyState message={`No purchases recorded in ${monthName}.`} /> // Use EmptyState
             )}
           </>
         )}
@@ -144,3 +175,4 @@ export const Reports = () => {
     </div>
   );
 };
+

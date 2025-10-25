@@ -29,6 +29,7 @@ const getDefaultMonth = () => {
     return `${year}-${month}`;
 };
 
+// --- REMOVED openAddItemsToBill prop ---
 export const Reports = () => {
   const { theme } = useTheme();
   const { userId, appId } = useAuth();
@@ -141,7 +142,11 @@ export const Reports = () => {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {purchases.map((item) => (
-                    <tr key={item.id} className="hover:bg-black/5 dark:hover:bg-white/5">
+                    // --- **MODIFIED**: Removed onClick handler and cursor ---
+                    <tr
+                      key={item.id}
+                      className="hover:bg-black/5 dark:hover:bg-white/5"
+                    >
                       <td className="p-4 text-sm">{formatDate(item.purchaseDate)}</td>
                       <td className="p-4 font-medium">{item.displayName}</td>
                       <td className="p-4 text-sm">{item.category}</td>

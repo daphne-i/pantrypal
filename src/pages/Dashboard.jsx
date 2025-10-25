@@ -16,7 +16,7 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
-import { Loader2, Info, Eye, ShoppingBasket, Filter, Trash2, Pencil } from "lucide-react";
+import { Loader2, Info, Eye, ShoppingBasket, Filter, Trash2, Pencil, PlusSquare } from "lucide-react";
 import { Timestamp } from "firebase/firestore";
 
 // Helper function to get the start of the current month
@@ -41,7 +41,7 @@ const LoadingSpinner = () => (
 );
 
 
-export const Dashboard = () => {
+export const Dashboard = ({ openAddItemsToBill }) => {
   const { theme } = useTheme();
   const { userId, appId } = useAuth();
   const startOfMonth = useMemo(getStartOfMonth, []);
@@ -175,15 +175,12 @@ export const Dashboard = () => {
       ? purchases.reduce((sum, item) => sum + (item.price || 0), 0)
       : 0;
   }, [purchases]);
-
    const budgetProgress = useMemo(() => {
      if (monthlyBudget === undefined || monthlyBudget === null || monthlyBudget <= 0) {
        return null;
      }
      return (totalSpend / monthlyBudget) * 100;
    }, [totalSpend, monthlyBudget]);
-
-
   const categoryData = useMemo(() => {
     if (!purchases) return [];
     const grouped = purchases.reduce((acc, item) => {
@@ -202,16 +199,23 @@ export const Dashboard = () => {
     }));
   }, [purchases]);
 
+  // --- **MODIFIED**: Re-ordered colors to follow VIBGYOR ---
   const COLORS = [
-    "#06b6d4", // cyan-500
-    "#3b82f6", // blue-500
-    "#8b5cf6", // purple-500
-    "#ec4899", // pink-500
-    "#f97316", // orange-500
-    "#22c55e", // green-500
-    "#eab308", // yellow-500
+    "#9C27B0", // Purple
+    "#3F51B5", // Indigo
+    "#2196F3", // Blue
+    "#4CAF50", // Green
+    "#FFEB3B", // Yellow
+    "#FF9800", // Orange
+    "#F44336", // Red
+    "#00BCD4", // Cyan (extra color)
+    "#E91E63", // Pink (extra color)
+    "#8BC34A", // Light Green (extra color)
+    "#FFC107", // Amber (extra color)
+    "#009688", // Teal (extra color)
   ];
 
+  // --- Loading/Error States ---
   if (isLoadingProfile || isLoadingAllBills) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -219,7 +223,6 @@ export const Dashboard = () => {
       </div>
     );
   }
-
    if (purchasesError || billsError) {
        console.error("Dashboard Data Error:", { purchasesError, billsError });
        return (
@@ -253,7 +256,6 @@ export const Dashboard = () => {
                   </p>
               )}
           </div>
-          {/* Budget Progress Bar */}
            {monthlyBudget !== undefined && monthlyBudget !== null && monthlyBudget > 0 && (
              <div>
                <div className="flex justify-between text-xs text-text-secondary mb-1">
@@ -274,7 +276,6 @@ export const Dashboard = () => {
            {(monthlyBudget === undefined || monthlyBudget === null || monthlyBudget <= 0) && !isLoadingProfile && (
                <p className="text-xs text-text-secondary mt-1">Set a budget in Settings to track progress.</p>
            )}
-
         </div>
 
         {/* Widget 2: Category Breakdown */}
@@ -285,37 +286,28 @@ export const Dashboard = () => {
            {isLoadingPurchases ? (
                <LoadingSpinner />
            ) : purchases && purchases.length > 0 ? (
-             // --- FIX: Gave ResponsiveContainer a fixed height to fix warning ---
-             <div className="flex-grow min-h-[300px]">
-                <ResponsiveContainer width="100%" height={300}>
+             <div className="flex-grow min-h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={categoryData}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius="80%"
-                      innerRadius="50%"
-                      fill="#8884d8"
-                      dataKey="value"
-                      labelLine={false}
+                      cx="50%" cy="50%" outerRadius="80%" innerRadius="50%"
+                      fill="#8884d8" dataKey="value" labelLine={false}
                        label={({ name, percent, value }) => `${name} (${formatCurrency(value)})`}
                     >
                       {categoryData.map((entry, index) => (
+                         // Use the new COLORS array
                         <Cell
                           key={`cell-${index}`}
                           fill={COLORS[index % COLORS.length]}
                         />
                       ))}
                     </Pie>
-                    <Tooltip
-                      formatter={(value, name) => [formatCurrency(value || 0), name]}
-                    />
+                    <Tooltip formatter={(value, name) => [formatCurrency(value || 0), name]} />
                   </PieChart>
                 </ResponsiveContainer>
              </div>
-          ) : (
-             <EmptyState message="No spending data for this month yet." />
-          )}
+          ) : ( <EmptyState message="No spending data for this month yet." /> )}
         </div>
 
         {/* Widget 3: RECENT BILLS with Filter & Actions */}
@@ -329,17 +321,11 @@ export const Dashboard = () => {
                   <Filter size={16} className="text-text-secondary" />
                   <label htmlFor="year-filter" className="font-medium">Year:</label>
                   <select
-                      id="year-filter"
-                      value={selectedYear}
-                      onChange={(e) => setSelectedYear(e.target.value)}
+                      id="year-filter" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)}
                       disabled={isLoadingAllBills}
                       className="p-1 rounded-md bg-input border border-border focus:ring-1 focus:ring-primary focus:outline-none text-sm"
                   >
-                      {availableYears.map(year => (
-                          <option key={year} value={year}>
-                              {year}
-                          </option>
-                      ))}
+                      {availableYears.map(year => ( <option key={year} value={year}>{year}</option> ))}
                   </select>
               </div>
           </div>
@@ -355,17 +341,24 @@ export const Dashboard = () => {
                     return (
                         <div key={bill.id} className="flex justify-between items-center p-3 bg-input rounded-lg border border-border group">
                           {/* Bill Info - clickable */}
-                          <div className="flex items-center gap-3 flex-grow cursor-pointer" onClick={() => openBillDetails(bill)}>
+                          <div className="flex items-center gap-3 flex-grow cursor-pointer overflow-hidden" onClick={() => openBillDetails(bill)}>
                             <ShoppingBasket size={20} className="text-icon opacity-80 flex-shrink-0" />
-                            <div className="flex-grow">
-                              <p className="font-medium group-hover:text-primary transition-colors">{bill.shopName}</p>
-                              <p className="text-xs text-text-secondary">
+                            <div className="flex-grow overflow-hidden">
+                              <p className="font-medium group-hover:text-primary transition-colors truncate" title={bill.shopName}>{bill.shopName}</p>
+                              <p className="text-xs text-text-secondary truncate">
                                   {formattedDate} - {bill.itemCount || 0} items {formattedTotal && `- ${formattedTotal}`}
                               </p>
                             </div>
                           </div>
                           {/* Action Buttons */}
-                          <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0 ml-2">
+                             <button
+                               onClick={(e) => { e.stopPropagation(); openAddItemsToBill(bill.id, bill.purchaseDate); }}
+                               title="Add More Items"
+                               className="p-1 text-text-secondary hover:text-green-500 transition-colors rounded hover:bg-green-500/10"
+                             >
+                               <PlusSquare size={16} />
+                             </button>
                              <button
                                onClick={(e) => { e.stopPropagation(); openEditBillModal(bill); }}
                                title="Edit Bill"

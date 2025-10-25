@@ -3,57 +3,57 @@ import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../hooks/useAuth";
 import { useDocument } from "../hooks/useDocument";
 import { handleBackupData, handleRestoreData } from "../firebaseUtils";
-import { Check, Copy, Loader2, Save, Upload, Download, AlertTriangle } from "lucide-react";
+import { Check, Copy, Loader2, Save, Upload, Download, AlertTriangle, CircleAlert, CircleCheck } from "lucide-react"; // <-- Added feedback icons
 
-// ThemeSelector Component
+// --- ThemeSelector Component (no changes) ---
 const ThemeSelector = () => {
-  const { setCurrentTheme, themes, themeName } = useTheme();
+    const { setCurrentTheme, themes, themeName } = useTheme();
 
-  return (
-    <div>
-      <h3 className="text-lg font-semibold mb-3">Select Theme</h3>
-      <div className="grid grid-cols-2 gap-4">
-        {Object.values(themes).map((t) => (
-          <button
-            key={t.name}
-            onClick={() => setCurrentTheme(t.name.toLowerCase())}
-            className={`p-4 rounded-lg border-2
-              ${themeName === t.name.toLowerCase() ? "border-primary" : "border-border"}
-              bg-background text-text shadow-sm hover:shadow-md transition-all`}
-          >
-            <div className="flex justify-between items-center mb-3">
-              <span className="font-semibold">{t.name}</span>
-              {themeName === t.name.toLowerCase() && (
+    return (
+      <div>
+        <h3 className="text-lg font-semibold mb-3">Select Theme</h3>
+        <div className="grid grid-cols-2 gap-4">
+          {Object.values(themes).map((t) => (
+            <button
+              key={t.name}
+              onClick={() => setCurrentTheme(t.name.toLowerCase())}
+              className={`p-4 rounded-lg border-2
+                ${themeName === t.name.toLowerCase() ? "border-primary" : "border-border"}
+                bg-background text-text shadow-sm hover:shadow-md transition-all`}
+            >
+              <div className="flex justify-between items-center mb-3">
+                <span className="font-semibold">{t.name}</span>
+                {themeName === t.name.toLowerCase() && (
+                  <div
+                    className={`w-5 h-5 rounded-full bg-primary flex items-center justify-center`}
+                  >
+                    <Check size={14} className={`text-primary-text`} />
+                  </div>
+                )}
+              </div>
+              {/* Theme preview swatches */}
+              <div className="flex gap-1">
                 <div
-                  className={`w-5 h-5 rounded-full bg-primary flex items-center justify-center`}
-                >
-                  <Check size={14} className={`text-primary-text`} />
-                </div>
-              )}
-            </div>
-            {/* Theme preview swatches */}
-            <div className="flex gap-1">
-              <div
-                className={`w-1/2 h-5 rounded`}
-                style={{ backgroundColor: t.css["--color-primary"] }}
-              ></div>
-              <div
-                className={`w-1/2 h-5 rounded border`}
-                style={{
-                  backgroundColor: t.css["--color-glass"],
-                  borderColor: t.css["--color-border"],
-                }}
-              ></div>
-            </div>
-          </button>
-        ))}
+                  className={`w-1/2 h-5 rounded`}
+                  style={{ backgroundColor: t.css["--color-primary"] }}
+                ></div>
+                <div
+                  className={`w-1/2 h-5 rounded border`}
+                  style={{
+                    backgroundColor: t.css["--color-glass"],
+                    borderColor: t.css["--color-border"],
+                  }}
+                ></div>
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
-    </div>
-  );
+    );
 };
 
 
-// Settings Page Component
+// --- Settings Page Component ---
 export const Settings = () => {
   const { userId, appId } = useAuth();
   const [budgetInput, setBudgetInput] = useState("");
@@ -62,7 +62,8 @@ export const Settings = () => {
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
-  const [restoreError, setRestoreError] = useState(null);
+  const [restoreFeedback, setRestoreFeedback] = useState({ type: '', message: '' }); // <-- Restore success/error message state
+  const [backupFeedback, setBackupFeedback] = useState({ type: '', message: '' }); // <-- Backup success/error message state
   const fileInputRef = useRef(null);
 
 
@@ -72,7 +73,7 @@ export const Settings = () => {
     userId
   );
 
-  // Load budget into input when profile data loads
+  // Load budget into input
   useEffect(() => {
     setBudgetInput(userProfile?.monthlyBudget !== undefined ? String(userProfile.monthlyBudget) : "");
   }, [userProfile]);
@@ -82,7 +83,7 @@ export const Settings = () => {
     if (!text) return;
     navigator.clipboard.writeText(text).then(() => {
         setCopySuccess(true);
-        setTimeout(() => setCopySuccess(false), 1500); // Reset after 1.5s
+        setTimeout(() => setCopySuccess(false), 1500);
     }).catch(err => {
         console.error('Failed to copy text: ', err);
     });
@@ -91,76 +92,79 @@ export const Settings = () => {
   // Handle Budget Save
   const handleSaveBudget = async () => {
     const newBudget = parseFloat(budgetInput);
-    // Allow saving 0 or empty string as clearing the budget
     if (budgetInput !== "" && (isNaN(newBudget) || newBudget < 0)) {
-      alert("Please enter a valid positive number for the budget, or leave it empty to clear."); // Improve later
+        // Use feedback state instead of alert
+         setBackupFeedback({ type: 'error', message: "Please enter a valid positive number for the budget, or leave it empty to clear." });
+         setTimeout(() => setBackupFeedback({ type: '', message: '' }), 3000); // Clear after 3s
       return;
     }
 
-    // Use null for empty string to potentially remove the field in Firestore
     const budgetToSave = budgetInput === "" ? null : newBudget;
 
     setIsSavingBudget(true);
+    setBackupFeedback({ type: '', message: '' }); // Clear previous feedback
     try {
       await updateDocument({ monthlyBudget: budgetToSave }, { merge: true });
-      // Optionally show a success message or rely on input disabling/enabling
+       setBackupFeedback({ type: 'success', message: "Budget saved successfully!" });
+       setTimeout(() => setBackupFeedback({ type: '', message: '' }), 3000);
     } catch (error) {
       console.error("Failed to save budget:", error);
-      alert("Failed to save budget. Please try again."); // Improve later
+       setBackupFeedback({ type: 'error', message: "Failed to save budget. Please try again." });
+       setTimeout(() => setBackupFeedback({ type: '', message: '' }), 3000);
     } finally {
       setIsSavingBudget(false);
     }
   };
 
-  // --- Handle Backup ---
+  // Handle Backup
   const triggerBackup = async () => {
       setIsBackingUp(true);
+      setBackupFeedback({ type: '', message: '' }); // Clear previous
       try {
           await handleBackupData(userId, appId);
+          // Success feedback is implicit via download start
       } catch (error) {
           console.error("Backup failed:", error);
-          alert("Failed to create backup. Check console for details."); // Improve UI later
+          setBackupFeedback({ type: 'error', message: "Failed to create backup. Check console for details." });
+          setTimeout(() => setBackupFeedback({ type: '', message: '' }), 3000);
       } finally {
           setIsBackingUp(false);
       }
   };
 
-  // --- Handle Restore ---
+  // Handle Restore
   const triggerRestore = () => {
-    // Open the file picker
     fileInputRef.current?.click();
   };
 
   const onFileSelected = (event) => {
       const file = event.target.files?.[0];
       if (file) {
-          // Reset error and show confirmation modal before proceeding
-          setRestoreError(null);
+          setRestoreFeedback({ type: '', message: '' }); // Clear old messages
           setShowRestoreConfirm(true);
       }
-      // Reset file input value so the same file can be selected again if needed
       if (fileInputRef.current) {
          fileInputRef.current.value = "";
       }
   };
 
   const confirmRestore = async () => {
-      setShowRestoreConfirm(false); // Close confirmation modal
+      setShowRestoreConfirm(false);
       const file = fileInputRef.current?.files?.[0];
       if (!file) return;
 
       setIsRestoring(true);
-      setRestoreError(null); // Clear previous errors
+      setRestoreFeedback({ type: '', message: '' });
       try {
           await handleRestoreData(file, userId, appId);
-          alert("Restore successful! Data has been updated."); // Improve UI later
-          // Data will update automatically via onSnapshot listeners
+          setRestoreFeedback({ type: 'success', message: "Restore successful! Data has been updated." });
+          setTimeout(() => setRestoreFeedback({ type: '', message: '' }), 3000); // Clear after 3s
       } catch (error) {
           console.error("Restore failed:", error);
-          setRestoreError(`Restore failed: ${error.message}. Check console for details.`); // Show error
+          setRestoreFeedback({ type: 'error', message: `Restore failed: ${error.message}. Check console.` });
+          // Error message stays until next action
       } finally {
           setIsRestoring(false);
-           // Reset file input again
           if (fileInputRef.current) {
              fileInputRef.current.value = "";
           }
@@ -172,7 +176,7 @@ export const Settings = () => {
 
 
   return (
-    <> {/* Added Fragment to allow modal */}
+    <>
       <div className="space-y-6 max-w-lg">
         <h1 className="text-3xl font-bold">Settings</h1>
         <div
@@ -198,14 +202,21 @@ export const Settings = () => {
                />
                <button
                  onClick={handleSaveBudget}
-                 disabled={isLoading || isSavingBudget || !budgetChanged} // Disable if unchanged
-                 className={`flex items-center gap-1 px-3 py-2 rounded-lg font-medium bg-primary text-primary-text primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed`} // Added cursor-not-allowed
+                 disabled={isLoading || isSavingBudget || !budgetChanged}
+                 className={`flex items-center gap-1 px-3 py-2 rounded-lg font-medium bg-primary text-primary-text primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
                >
                  {isSavingBudget ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                  Save
                </button>
              </div>
              <p className="text-xs text-text-secondary mt-1">Leave empty to clear budget tracking.</p>
+             {/* Feedback Area for Budget/Backup */}
+             {backupFeedback.message && (
+                <div className={`mt-2 text-sm flex items-center gap-1 ${backupFeedback.type === 'error' ? 'text-red-500' : 'text-green-600'}`}>
+                    {backupFeedback.type === 'error' ? <CircleAlert size={16} /> : <CircleCheck size={16} />}
+                    {backupFeedback.message}
+                </div>
+             )}
           </div>
 
 
@@ -225,10 +236,10 @@ export const Settings = () => {
             </div>
           </div>
 
-          {/* --- Data Management --- */}
+          {/* Data Management */}
           <div>
             <h3 className="text-lg font-semibold mb-2">Data Management</h3>
-            <div className="flex flex-col sm:flex-row gap-4"> {/* Adjusted layout for buttons */}
+            <div className="flex flex-col sm:flex-row gap-4">
               <button
                 onClick={triggerBackup}
                 disabled={isBackingUp || isRestoring}
@@ -249,13 +260,17 @@ export const Settings = () => {
               <input
                 type="file"
                 ref={fileInputRef}
-                accept=".json" // Accept only JSON files
+                accept=".json"
                 style={{ display: 'none' }}
                 onChange={onFileSelected}
               />
             </div>
-             {restoreError && (
-                 <p className="text-sm text-red-500 mt-2">{restoreError}</p>
+             {/* Feedback Area for Restore */}
+             {restoreFeedback.message && (
+                 <div className={`mt-2 text-sm flex items-center gap-1 ${restoreFeedback.type === 'error' ? 'text-red-500' : 'text-green-600'}`}>
+                    {restoreFeedback.type === 'error' ? <CircleAlert size={16} /> : <CircleCheck size={16} />}
+                     {restoreFeedback.message}
+                 </div>
              )}
             <p className="text-xs text-text-secondary mt-2">
                 Save your data (purchases, unique items, settings) to a JSON file, or restore from a previously saved backup.
@@ -298,8 +313,7 @@ export const Settings = () => {
                           className="mt-3 inline-flex w-full justify-center rounded-md bg-input px-3 py-2 text-sm font-semibold text-text shadow-sm ring-1 ring-inset ring-border hover:bg-black/5 dark:hover:bg-white/5 sm:mt-0 sm:w-auto"
                           onClick={() => {
                               setShowRestoreConfirm(false);
-                              setRestoreError(null);
-                               // Reset file input again on cancel
+                              setRestoreFeedback({ type: '', message: '' }); // Clear any previous error on cancel
                               if (fileInputRef.current) {
                                   fileInputRef.current.value = "";
                               }

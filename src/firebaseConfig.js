@@ -11,12 +11,15 @@ import { getFirestore, setLogLevel } from "firebase/firestore";
 //    Replace this with your *actual* Firebase project config
 //    from the Firebase console to run locally.
 const defaultConfig = {
-  apiKey: "YOUR_API_KEY_HERE",
-  authDomain: "YOUR_AUTH_DOMAIN_HERE",
-  projectId: "YOUR_PROJECT_ID_HERE",
-  storageBucket: "YOUR_STORAGE_BUCKET_HERE",
-  messagingSenderId: "YOUR_SENDER_ID_HERE",
-  appId: "YOUR_APP_ID_HERE"
+  // --- PASTE YOUR COPIED VALUES HERE ---
+  apiKey: "AIzaSyDRAXBINfaepUUJgZDo-0XDwQdTTaNEpIA", // <-- Replace
+  authDomain: "pantrypal-4ebee.firebaseapp.com",      // <-- Replace
+  projectId: "pantrypal-4ebee",                      // <-- Replace
+  storageBucket: "pantrypal-4ebee.firebasestorage.app", // <-- Replace
+  messagingSenderId: "266489467931",                 // <-- Replace
+  appId: "1:266489467931:web:11a5d8c7dc6958f03a94be", // <-- Replace
+  measurementId: "G-S05F5BZ8T8" // <-- Replace (Optional, keep if you have it)
+  // --- END OF VALUES TO PASTE ---
 };
 
 // Check if the global variable exists, otherwise use our local default
@@ -66,11 +69,8 @@ export const initializeAuth = async () => {
     console.log("Firebase Auth initialized. User UID:", auth.currentUser?.uid);
   } catch (error) {
     console.error("Firebase Auth Error:", error);
-    if (error.code === 'auth/invalid-api-key') {
-      console.error("Local Dev Fix: Please add your Firebase project's config to src/firebaseConfig.js");
-    }
+    // Removed the specific API key error message as it's less likely now
   }
 };
 
 export { db, auth, app };
-

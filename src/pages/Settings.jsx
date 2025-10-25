@@ -1,55 +1,57 @@
 import React, { useState, useEffect, useRef } from "react";
+import toast from 'react-hot-toast'; // <-- Import toast
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../hooks/useAuth";
 import { useDocument } from "../hooks/useDocument";
 import { handleBackupData, handleRestoreData } from "../firebaseUtils";
-import { Check, Copy, Loader2, Save, Upload, Download, AlertTriangle, CircleAlert, CircleCheck } from "lucide-react"; // <-- Added feedback icons
+import { Check, Copy, Loader2, Save, Upload, Download, AlertTriangle } from "lucide-react";
+// Removed CircleAlert, CircleCheck as they are no longer used for inline feedback
 
 // --- ThemeSelector Component (no changes) ---
 const ThemeSelector = () => {
-    const { setCurrentTheme, themes, themeName } = useTheme();
+  const { setCurrentTheme, themes, themeName } = useTheme();
 
-    return (
-      <div>
-        <h3 className="text-lg font-semibold mb-3">Select Theme</h3>
-        <div className="grid grid-cols-2 gap-4">
-          {Object.values(themes).map((t) => (
-            <button
-              key={t.name}
-              onClick={() => setCurrentTheme(t.name.toLowerCase())}
-              className={`p-4 rounded-lg border-2
-                ${themeName === t.name.toLowerCase() ? "border-primary" : "border-border"}
-                bg-background text-text shadow-sm hover:shadow-md transition-all`}
-            >
-              <div className="flex justify-between items-center mb-3">
-                <span className="font-semibold">{t.name}</span>
-                {themeName === t.name.toLowerCase() && (
-                  <div
-                    className={`w-5 h-5 rounded-full bg-primary flex items-center justify-center`}
-                  >
-                    <Check size={14} className={`text-primary-text`} />
-                  </div>
-                )}
-              </div>
-              {/* Theme preview swatches */}
-              <div className="flex gap-1">
+  return (
+    <div>
+      <h3 className="text-lg font-semibold mb-3">Select Theme</h3>
+      <div className="grid grid-cols-2 gap-4">
+        {Object.values(themes).map((t) => (
+          <button
+            key={t.name}
+            onClick={() => setCurrentTheme(t.name.toLowerCase())}
+            className={`p-4 rounded-lg border-2
+              ${themeName === t.name.toLowerCase() ? "border-primary" : "border-border"}
+              bg-background text-text shadow-sm hover:shadow-md transition-all`}
+          >
+            <div className="flex justify-between items-center mb-3">
+              <span className="font-semibold">{t.name}</span>
+              {themeName === t.name.toLowerCase() && (
                 <div
-                  className={`w-1/2 h-5 rounded`}
-                  style={{ backgroundColor: t.css["--color-primary"] }}
-                ></div>
-                <div
-                  className={`w-1/2 h-5 rounded border`}
-                  style={{
-                    backgroundColor: t.css["--color-glass"],
-                    borderColor: t.css["--color-border"],
-                  }}
-                ></div>
-              </div>
-            </button>
-          ))}
-        </div>
+                  className={`w-5 h-5 rounded-full bg-primary flex items-center justify-center`}
+                >
+                  <Check size={14} className={`text-primary-text`} />
+                </div>
+              )}
+            </div>
+            {/* Theme preview swatches */}
+            <div className="flex gap-1">
+              <div
+                className={`w-1/2 h-5 rounded`}
+                style={{ backgroundColor: t.css["--color-primary"] }}
+              ></div>
+              <div
+                className={`w-1/2 h-5 rounded border`}
+                style={{
+                  backgroundColor: t.css["--color-glass"],
+                  borderColor: t.css["--color-border"],
+                }}
+              ></div>
+            </div>
+          </button>
+        ))}
       </div>
-    );
+    </div>
+  );
 };
 
 
@@ -62,8 +64,7 @@ export const Settings = () => {
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
-  const [restoreFeedback, setRestoreFeedback] = useState({ type: '', message: '' }); // <-- Restore success/error message state
-  const [backupFeedback, setBackupFeedback] = useState({ type: '', message: '' }); // <-- Backup success/error message state
+  // Removed restoreFeedback and backupFeedback states
   const fileInputRef = useRef(null);
 
 
@@ -83,9 +84,11 @@ export const Settings = () => {
     if (!text) return;
     navigator.clipboard.writeText(text).then(() => {
         setCopySuccess(true);
+        toast.success("User ID Copied!"); // <-- Toast feedback
         setTimeout(() => setCopySuccess(false), 1500);
     }).catch(err => {
         console.error('Failed to copy text: ', err);
+        toast.error("Failed to copy ID."); // <-- Toast feedback
     });
   };
 
@@ -93,24 +96,19 @@ export const Settings = () => {
   const handleSaveBudget = async () => {
     const newBudget = parseFloat(budgetInput);
     if (budgetInput !== "" && (isNaN(newBudget) || newBudget < 0)) {
-        // Use feedback state instead of alert
-         setBackupFeedback({ type: 'error', message: "Please enter a valid positive number for the budget, or leave it empty to clear." });
-         setTimeout(() => setBackupFeedback({ type: '', message: '' }), 3000); // Clear after 3s
+         toast.error("Please enter a valid positive number for the budget, or leave it empty to clear."); // <-- Toast feedback
       return;
     }
 
     const budgetToSave = budgetInput === "" ? null : newBudget;
 
     setIsSavingBudget(true);
-    setBackupFeedback({ type: '', message: '' }); // Clear previous feedback
     try {
       await updateDocument({ monthlyBudget: budgetToSave }, { merge: true });
-       setBackupFeedback({ type: 'success', message: "Budget saved successfully!" });
-       setTimeout(() => setBackupFeedback({ type: '', message: '' }), 3000);
+       toast.success("Budget saved successfully!"); // <-- Toast feedback
     } catch (error) {
       console.error("Failed to save budget:", error);
-       setBackupFeedback({ type: 'error', message: "Failed to save budget. Please try again." });
-       setTimeout(() => setBackupFeedback({ type: '', message: '' }), 3000);
+       toast.error("Failed to save budget. Please try again."); // <-- Toast feedback
     } finally {
       setIsSavingBudget(false);
     }
@@ -119,14 +117,12 @@ export const Settings = () => {
   // Handle Backup
   const triggerBackup = async () => {
       setIsBackingUp(true);
-      setBackupFeedback({ type: '', message: '' }); // Clear previous
       try {
           await handleBackupData(userId, appId);
-          // Success feedback is implicit via download start
+          toast.success("Backup file download started."); // <-- Toast feedback
       } catch (error) {
           console.error("Backup failed:", error);
-          setBackupFeedback({ type: 'error', message: "Failed to create backup. Check console for details." });
-          setTimeout(() => setBackupFeedback({ type: '', message: '' }), 3000);
+          toast.error("Failed to create backup. Check console."); // <-- Toast feedback
       } finally {
           setIsBackingUp(false);
       }
@@ -140,7 +136,6 @@ export const Settings = () => {
   const onFileSelected = (event) => {
       const file = event.target.files?.[0];
       if (file) {
-          setRestoreFeedback({ type: '', message: '' }); // Clear old messages
           setShowRestoreConfirm(true);
       }
       if (fileInputRef.current) {
@@ -154,15 +149,15 @@ export const Settings = () => {
       if (!file) return;
 
       setIsRestoring(true);
-      setRestoreFeedback({ type: '', message: '' });
+      const toastId = toast.loading("Restoring data..."); // <-- Loading toast
+
       try {
           await handleRestoreData(file, userId, appId);
-          setRestoreFeedback({ type: 'success', message: "Restore successful! Data has been updated." });
-          setTimeout(() => setRestoreFeedback({ type: '', message: '' }), 3000); // Clear after 3s
+          toast.success("Restore successful! Data has been updated.", { id: toastId }); // <-- Update toast on success
+          // Data will update automatically via onSnapshot listeners
       } catch (error) {
           console.error("Restore failed:", error);
-          setRestoreFeedback({ type: 'error', message: `Restore failed: ${error.message}. Check console.` });
-          // Error message stays until next action
+          toast.error(`Restore failed: ${error.message}. Check console.`, { id: toastId }); // <-- Update toast on error
       } finally {
           setIsRestoring(false);
           if (fileInputRef.current) {
@@ -210,13 +205,7 @@ export const Settings = () => {
                </button>
              </div>
              <p className="text-xs text-text-secondary mt-1">Leave empty to clear budget tracking.</p>
-             {/* Feedback Area for Budget/Backup */}
-             {backupFeedback.message && (
-                <div className={`mt-2 text-sm flex items-center gap-1 ${backupFeedback.type === 'error' ? 'text-red-500' : 'text-green-600'}`}>
-                    {backupFeedback.type === 'error' ? <CircleAlert size={16} /> : <CircleCheck size={16} />}
-                    {backupFeedback.message}
-                </div>
-             )}
+             {/* Removed inline feedback area for budget/backup */}
           </div>
 
 
@@ -256,7 +245,6 @@ export const Settings = () => {
                  {isRestoring ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
                  Restore from Backup
               </button>
-              {/* Hidden file input */}
               <input
                 type="file"
                 ref={fileInputRef}
@@ -265,13 +253,7 @@ export const Settings = () => {
                 onChange={onFileSelected}
               />
             </div>
-             {/* Feedback Area for Restore */}
-             {restoreFeedback.message && (
-                 <div className={`mt-2 text-sm flex items-center gap-1 ${restoreFeedback.type === 'error' ? 'text-red-500' : 'text-green-600'}`}>
-                    {restoreFeedback.type === 'error' ? <CircleAlert size={16} /> : <CircleCheck size={16} />}
-                     {restoreFeedback.message}
-                 </div>
-             )}
+             {/* Removed inline feedback area for restore */}
             <p className="text-xs text-text-secondary mt-2">
                 Save your data (purchases, unique items, settings) to a JSON file, or restore from a previously saved backup.
                 <span className="font-semibold text-red-500"> Warning: Restoring will overwrite current data.</span>
@@ -280,7 +262,7 @@ export const Settings = () => {
         </div>
       </div>
 
-      {/* --- Restore Confirmation Modal --- */}
+      {/* Restore Confirmation Modal (no changes needed here) */}
       {showRestoreConfirm && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4">
               <div className={`w-full max-w-md p-6 rounded-2xl bg-glass border border-border shadow-xl z-50`}>
@@ -313,7 +295,7 @@ export const Settings = () => {
                           className="mt-3 inline-flex w-full justify-center rounded-md bg-input px-3 py-2 text-sm font-semibold text-text shadow-sm ring-1 ring-inset ring-border hover:bg-black/5 dark:hover:bg-white/5 sm:mt-0 sm:w-auto"
                           onClick={() => {
                               setShowRestoreConfirm(false);
-                              setRestoreFeedback({ type: '', message: '' }); // Clear any previous error on cancel
+                              // Clear error implicitly when canceling
                               if (fileInputRef.current) {
                                   fileInputRef.current.value = "";
                               }

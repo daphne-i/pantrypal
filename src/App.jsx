@@ -8,18 +8,18 @@ import { Dashboard } from "./pages/Dashboard";
 import { SmartList } from "./pages/SmartList";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
+import { Toaster } from 'react-hot-toast'; // <-- Import Toaster
 
-// Auth context provider to pass auth state down
+// Auth context provider (no changes)
 const AuthContext = React.createContext();
 const AuthProvider = ({ children }) => {
   const auth = useAuth();
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 };
-// Re-export useAuth from context for convenience
-export const useAuthContext = () => React.useContext(AuthContext); // <-- FIX was here
+export const useAuthContext = () => React.useContext(AuthContext);
+
 
 export default function AppWrapper() {
-  // We wrap the app in AuthProvider so all components can access auth state
   return (
     <AuthProvider>
       <App />
@@ -30,15 +30,42 @@ export default function AppWrapper() {
 function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { isAuthReady } = useAuthContext(); // Get auth state
+  const { isAuthReady } = useAuthContext();
 
-  // Show loading screen until Firebase is ready
   if (!isAuthReady) {
     return <LoadingScreen />;
   }
 
   return (
     <ThemeProvider>
+       {/* Add Toaster component here - manages rendering toasts */}
+       <Toaster
+         position="top-center"
+         reverseOrder={false}
+         toastOptions={{
+           duration: 3000, // Default duration
+           style: {
+             background: 'var(--color-glass)', // Use theme variable
+             color: 'var(--color-text)',       // Use theme variable
+             border: '1px solid var(--color-border)', // Use theme variable
+             boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+           },
+           success: {
+             duration: 2000, // Shorter duration for success
+             iconTheme: {
+               primary: '#22c55e', // Green checkmark
+               secondary: 'white',
+             },
+           },
+           error: {
+             duration: 4000, // Longer for errors
+              iconTheme: {
+               primary: '#ef4444', // Red X
+               secondary: 'white',
+             },
+           },
+         }}
+       />
       <Layout
         currentPage={currentPage}
         setCurrentPage={setCurrentPage}

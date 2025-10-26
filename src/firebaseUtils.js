@@ -12,13 +12,14 @@ import {
   setDoc,
   deleteDoc,
   updateDoc,
+  arrayUnion, // Import arrayUnion
 } from "firebase/firestore";
 import { db } from "./firebaseConfig";
 import toast from 'react-hot-toast';
 import { formatCurrency, formatDate } from './utils';
 
 // --- Helper to parse date string ---
-// (Keep this function as is)
+// (Keep as is)
 function getTimestampFromDateString(dateString) {
     if (typeof dateString !== 'string' || !dateString.match(/^\d{4}-\d{2}-\d{2}$/)) {
         console.warn("Invalid date string, falling back to server timestamp:", dateString);
@@ -34,7 +35,7 @@ function getTimestampFromDateString(dateString) {
 }
 
 // --- Save Bill ---
-// (Keep this function as is)
+// (Keep as is)
 export const handleSaveBill = async (billData, userId, appId) => {
   if (!userId || !appId) {
     throw new Error("User or App ID is missing.");
@@ -55,7 +56,7 @@ export const handleSaveBill = async (billData, userId, appId) => {
 };
 
 // --- Update Bill ---
-// (Keep this function as is)
+// (Keep as is)
 export const handleUpdateBill = async (billId, billData, userId, appId) => {
     if (!userId || !appId || !billId) {
       throw new Error("Missing ID for bill update.");
@@ -73,13 +74,14 @@ export const handleUpdateBill = async (billId, billData, userId, appId) => {
 
 
 // --- Save Items ---
-// MODIFIED: Added logic to unmark items from shopping list
+// MODIFIED: Manage priceHistory array
 export const handleSaveItems = async (items, billId, billDate, userId, appId) => {
   if (!userId || !appId || !billId || !items || items.length === 0) {
     throw new Error("Missing required data to save items.");
   }
 
   const purchaseTimestamp = getTimestampFromDateString(billDate);
+  const MAX_HISTORY_LENGTH = 5; // Keep the last 5 prices
 
   const MAX_WRITES_PER_BATCH = 500;
   let batch = writeBatch(db);
@@ -89,6 +91,18 @@ export const handleSaveItems = async (items, billId, billDate, userId, appId) =>
   const billPath = `/artifacts/${appId}/users/${userId}/bills`;
   const billRef = doc(db, billPath, billId);
 
+  // Pre-fetch existing unique items to update history correctly within the batch
+  // Note: This adds read operations but simplifies batch logic.
+  const uniqueItemRefsToFetch = items.map(item => doc(db, uniqueItemsPath, item.name.trim().toLowerCase()));
+  const uniqueItemSnapshots = await Promise.all(uniqueItemRefsToFetch.map(ref => getDoc(ref)));
+  const existingUniqueItems = new Map();
+  uniqueItemSnapshots.forEach(snap => {
+      if (snap.exists()) {
+          existingUniqueItems.set(snap.id, snap.data());
+      }
+  });
+
+
   const commitBatch = async () => {
     await batch.commit();
     batch = writeBatch(db);
@@ -96,6 +110,7 @@ export const handleSaveItems = async (items, billId, billDate, userId, appId) =>
   };
 
   for (const item of items) {
+    // 1. Save the individual purchase item
     const newItemRef = doc(collection(db, purchasesPath));
     batch.set(newItemRef, {
       billId: billId,
@@ -111,38 +126,53 @@ export const handleSaveItems = async (items, billId, billDate, userId, appId) =>
     });
     writeCount++;
 
+    // 2. Update the unique item with price history
     const uniqueItemName = item.name.trim().toLowerCase();
     const uniqueItemRef = doc(db, uniqueItemsPath, uniqueItemName);
-    
+
+    // Get existing history or initialize
+    const existingData = existingUniqueItems.get(uniqueItemName);
+    const currentHistory = existingData?.priceHistory || [];
+
+    // Create new history entry
+    const newHistoryEntry = { price: item.price, date: purchaseTimestamp };
+
+    // Prepend new entry and limit history size
+    const updatedHistory = [newHistoryEntry, ...currentHistory].slice(0, MAX_HISTORY_LENGTH);
+
     // Data for unique item update
     const uniqueItemData = {
         name: uniqueItemName,
         displayName: item.name.trim(),
         category: item.category,
-        lastPurchaseDate: purchaseTimestamp,
+        lastPurchaseDate: purchaseTimestamp, // Still track the absolute last purchase
         purchaseCount: increment(1),
-        lastPrice: item.price,
-        isMarkedForShopping: false // <-- NEW: Unmark item when purchased
+        priceHistory: updatedHistory, // Store the array
+        isMarkedForShopping: false
+        // Removed lastPrice field
     };
 
-    batch.set( uniqueItemRef, uniqueItemData, { merge: true } );
+    batch.set( uniqueItemRef, uniqueItemData, { merge: true } ); // Use merge:true to create if not exists
     writeCount++;
 
-    if (writeCount >= MAX_WRITES_PER_BATCH - 1) {
+    // Commit batch if nearing limit
+    if (writeCount >= MAX_WRITES_PER_BATCH - 1) { // Leave room for bill update
       await commitBatch();
     }
   }
 
+  // 3. Update the item count on the bill
   batch.update(billRef, { itemCount: increment(items.length) });
   writeCount++;
 
+  // 4. Commit any remaining writes
   if (writeCount > 0) {
     await batch.commit();
   }
 };
 
 // --- Delete Single Item ---
-// (Keep this function as is)
+// (Keep as is)
 export const handleDeleteItem = async (purchaseId, billId, itemData, userId, appId) => {
     if (!userId || !appId || !purchaseId || !billId || !itemData) {
         throw new Error("Missing data for item deletion.");
@@ -158,11 +188,12 @@ export const handleDeleteItem = async (purchaseId, billId, itemData, userId, app
     const uniqueItemName = itemData.name.trim().toLowerCase();
     const uniqueItemRef = doc(db, uniqueItemsPath, uniqueItemName);
     batch.update(uniqueItemRef, { purchaseCount: increment(-1) });
+    // Note: We don't remove from priceHistory on deletion to keep historical data
     await batch.commit();
 };
 
 // --- Update Single Item ---
-// (Keep this function as is - saving items handles unmarking)
+// MODIFIED: Only update basic info, not price history here
 export const handleUpdateItem = async (purchaseId, oldData, newData, userId, appId) => {
     if (!userId || !appId || !purchaseId || !oldData || !newData) {
         throw new Error("Missing data for item update.");
@@ -172,78 +203,70 @@ export const handleUpdateItem = async (purchaseId, oldData, newData, userId, app
     const purchasesPath = `/artifacts/${appId}/users/${userId}/purchases`;
     const uniqueItemsPath = `/artifacts/${appId}/users/${userId}/unique_items`;
 
+    // 1. Update the 'purchase' document itself
     const purchaseRef = doc(db, purchasesPath, purchaseId);
     batch.update(purchaseRef, {
         name: newData.name.trim().toLowerCase(),
         displayName: newData.name.trim(),
         quantity: newData.quantity,
         unit: newData.unit,
-        price: newData.price,
+        price: newData.price, // Update price on the individual purchase record
         category: newData.category,
     });
 
     const newUniqueItemName = newData.name.trim().toLowerCase();
     const oldUniqueItemName = oldData.name.trim().toLowerCase();
 
+    // 2. Handle 'unique_items' collection ONLY IF name changed
+    // We are NOT updating priceHistory or lastPurchaseDate here.
     if (newUniqueItemName !== oldUniqueItemName) {
+        // --- Name Changed ---
+        // A. Decrement old unique item count (keep its history)
         const oldItemRef = doc(db, uniqueItemsPath, oldUniqueItemName);
         batch.update(oldItemRef, { purchaseCount: increment(-1) });
+
+        // B. Increment/set new unique item count
+        // Fetch existing new item to preserve its history if it exists
         const newItemRef = doc(db, uniqueItemsPath, newUniqueItemName);
+        const newItemSnap = await getDoc(newItemRef);
+        const existingNewItemData = newItemSnap.exists() ? newItemSnap.data() : {};
+
         batch.set(newItemRef, {
+            ...existingNewItemData, // Spread existing data first
             name: newUniqueItemName,
             displayName: newData.name.trim(),
             category: newData.category,
-            lastPurchaseDate: oldData.purchaseDate,
             purchaseCount: increment(1),
-            lastPrice: newData.price,
-            // Keep existing isMarkedForShopping if it exists, otherwise false
-            isMarkedForShopping: oldData.isMarkedForShopping || false
+            // Preserve existing priceHistory, lastPurchaseDate, isMarkedForShopping
+            // These will be updated correctly on the *next* save via handleSaveItems
         }, { merge: true });
+
     } else {
+        // --- Name Did NOT Change ---
+        // Only update displayName and category if they differ.
         const uniqueItemRef = doc(db, uniqueItemsPath, newUniqueItemName);
-        const updateData = {
-            displayName: newData.name.trim(),
-            category: newData.category
-        };
         const uniqueItemSnap = await getDoc(uniqueItemRef);
-        let mustUpdateLastFields = false;
-
         if (uniqueItemSnap.exists()) {
-            const uniqueData = uniqueItemSnap.data();
-            const isLatestPurchase = !uniqueData.lastPurchaseDate || uniqueData.lastPurchaseDate.toMillis() <= oldData.purchaseDate.toMillis();
-            const isMissingLastPrice = uniqueData.lastPrice === undefined;
-
-            if (isLatestPurchase || isMissingLastPrice) {
-                updateData.lastPrice = newData.price;
-                if(isLatestPurchase) {
-                   updateData.lastPurchaseDate = oldData.purchaseDate;
-                }
-                mustUpdateLastFields = true;
-            }
-        } else {
-            updateData.lastPrice = newData.price;
-            updateData.lastPurchaseDate = oldData.purchaseDate;
-            updateData.purchaseCount = increment(1);
-            updateData.name = newUniqueItemName;
-            updateData.isMarkedForShopping = false; // Default for new unique items
-            mustUpdateLastFields = true;
+             const uniqueData = uniqueItemSnap.data();
+             const updates = {};
+             if (uniqueData.displayName !== newData.name.trim()) {
+                 updates.displayName = newData.name.trim();
+             }
+             if (uniqueData.category !== newData.category) {
+                 updates.category = newData.category;
+             }
+             if (Object.keys(updates).length > 0) {
+                 batch.update(uniqueItemRef, updates);
+             }
         }
-
-         if (mustUpdateLastFields) {
-             batch.set(uniqueItemRef, updateData, { merge: true });
-         } else if (uniqueItemSnap.exists()) {
-              batch.update(uniqueItemRef, {
-                 displayName: newData.name.trim(),
-                 category: newData.category
-             });
-         }
+        // No update to priceHistory or lastPurchaseDate needed here
     }
+
     await batch.commit();
 };
 
-
 // --- Delete Entire Bill ---
-// (Keep this function as is)
+// (Keep as is)
 export const handleDeleteBill = async (billId, userId, appId) => {
     if (!userId || !appId || !billId) {
       throw new Error("Missing ID for bill deletion.");
@@ -296,7 +319,7 @@ export const handleDeleteBill = async (billId, userId, appId) => {
 
 
 // --- Backup Function ---
-// (Keep this function as is)
+// (Keep as is - it already handles Timestamps correctly)
 export const handleBackupData = async (userId, appId) => {
   if (!userId || !appId) {
     throw new Error("User or App ID is missing for backup.");
@@ -343,7 +366,7 @@ export const handleBackupData = async (userId, appId) => {
 };
 
 // --- Restore Function ---
-// (Keep the previously fixed version of this function)
+// (Keep as is - it already handles Timestamps correctly)
 export const handleRestoreData = async (file, userId, appId) => {
     if (!file || !userId || !appId) {
         throw new Error("Missing file, user, or app ID for restore.");
@@ -427,6 +450,10 @@ export const handleRestoreData = async (file, userId, appId) => {
                          if (!item.id) continue;
                          const itemRef = doc(db, uniqueItemsPath, item.id);
                          const { id, ...itemDocData } = item;
+                         // Ensure isMarkedForShopping exists, default to false if restoring old data
+                         if (itemDocData.isMarkedForShopping === undefined) {
+                            itemDocData.isMarkedForShopping = false;
+                         }
                          await addWrite(itemRef, itemDocData);
                      }
                 }
@@ -450,7 +477,7 @@ export const handleRestoreData = async (file, userId, appId) => {
 
 
 // --- Export CSV Function ---
-// (Keep this function as is)
+// (Keep as is)
 export const handleExportCSV = (purchases, selectedMonth) => {
     if (!purchases || purchases.length === 0) {
       toast.error("No purchase data available for the selected month to export.");
@@ -493,30 +520,21 @@ export const handleExportCSV = (purchases, selectedMonth) => {
     }
 };
 
-// --- NEW FUNCTION: Toggle Shopping List Item ---
-/**
- * Updates the `isMarkedForShopping` status for a unique item.
- * @param {string} itemId - The ID (lowercase name) of the unique item.
- * @param {boolean} isMarked - The new status (true if marked for shopping).
- * @param {string} userId - The current user's ID.
- * @param {string} appId - The current app ID.
- */
+// --- Toggle Shopping List Item ---
+// (Keep as is)
 export const handleToggleShoppingListItem = async (itemId, isMarked, userId, appId) => {
     if (!userId || !appId || !itemId) {
         throw new Error("Missing required data to update shopping list item.");
     }
     const uniqueItemsPath = `/artifacts/${appId}/users/${userId}/unique_items`;
     const itemRef = doc(db, uniqueItemsPath, itemId);
-
     try {
         await updateDoc(itemRef, {
             isMarkedForShopping: isMarked
         });
-        // Optional: Add toast notification here if desired
-        // toast.success(`Item ${isMarked ? 'added to' : 'removed from'} shopping list.`);
     } catch (error) {
         console.error(`Error updating shopping list status for item ${itemId}:`, error);
         toast.error(`Failed to update item status: ${error.message}`);
-        throw error; // Re-throw error for component to handle if needed
+        throw error;
     }
 };

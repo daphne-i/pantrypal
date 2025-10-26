@@ -4,7 +4,7 @@ import {
   collection,
   serverTimestamp,
   increment,
-  Timestamp,
+  Timestamp, // <--- Make sure Timestamp is imported directly
   getDocs,
   query,
   where,
@@ -30,7 +30,7 @@ function getTimestampFromDateString(dateString) {
     // "2024-10-25" -> creates date as "2024-10-25T00:00:00" in local time
     const parts = dateString.split('-').map(Number);
     const localDate = new Date(parts[0], parts[1] - 1, parts[2]); // (Year, MonthIndex, Day)
-    
+
     // Check for invalid date (e.g., "2024-02-31")
     if (isNaN(localDate.getTime())) {
         console.warn("Invalid date created, falling back to server timestamp:", dateString);
@@ -89,7 +89,7 @@ export const handleSaveItems = async (items, billId, billDate, userId, appId) =>
   if (!userId || !appId || !billId || !items || items.length === 0) {
     throw new Error("Missing required data to save items.");
   }
-  
+
   // Convert the bill's date string to a Timestamp *once*
   const purchaseTimestamp = getTimestampFromDateString(billDate);
 
@@ -138,16 +138,18 @@ export const handleSaveItems = async (items, billId, billDate, userId, appId) =>
     );
     writeCount++;
 
-    if (writeCount >= MAX_WRITES_PER_BATCH - 1) {
+    if (writeCount >= MAX_WRITES_PER_BATCH - 1) { // Leave room for bill update
       await commitBatch();
     }
   }
 
+  // Update the item count on the bill
   batch.update(billRef, {
     itemCount: increment(items.length),
   });
   writeCount++;
 
+  // Commit the final batch if there are remaining writes
   if (writeCount > 0) {
     await batch.commit();
   }
@@ -229,54 +231,53 @@ export const handleUpdateItem = async (purchaseId, oldData, newData, userId, app
     } else {
         // --- Name Did NOT Change ---
         const uniqueItemRef = doc(db, uniqueItemsPath, newUniqueItemName);
-        
+
         // Base update for fields that always change
         const updateData = {
             displayName: newData.name.trim(),
             category: newData.category
         };
 
+        // Fetch the current unique item data to check the lastPurchaseDate
         const uniqueItemSnap = await getDoc(uniqueItemRef);
-        let mustUpdate = false; // This flag is for lastPrice/lastDate
+        let mustUpdateLastFields = false; // Flag to update lastPrice/lastDate
 
         if (uniqueItemSnap.exists()) {
             const uniqueData = uniqueItemSnap.data();
 
-            // --- NEW LOGIC ---
-            // Check if lastPrice field is missing, OR
-            // if the item being edited is the latest one.
+            // Check if the item being edited IS the latest purchase recorded
+            // or if lastPrice/lastPurchaseDate is missing (for older data)
+            const isLatestPurchase = !uniqueData.lastPurchaseDate || uniqueData.lastPurchaseDate.toMillis() <= oldData.purchaseDate.toMillis();
             const isMissingLastPrice = uniqueData.lastPrice === undefined;
-            const isLatestPurchase = uniqueData.lastPurchaseDate.toMillis() <= oldData.purchaseDate.toMillis();
-            
-            if (isMissingLastPrice || isLatestPurchase) {
-                // Set/update lastPrice and lastDate
-                updateData.lastPrice = newData.price;
-                updateData.lastPurchaseDate = oldData.purchaseDate;
-                mustUpdate = true;
-            }
-            // --- END NEW LOGIC ---
 
+            if (isLatestPurchase || isMissingLastPrice) {
+                // Set/update lastPrice and lastDate because this edit affects the latest record
+                updateData.lastPrice = newData.price;
+                // Only update lastPurchaseDate if this IS the latest purchase
+                if(isLatestPurchase) {
+                   updateData.lastPurchaseDate = oldData.purchaseDate;
+                }
+                mustUpdateLastFields = true;
+            }
         } else {
-            // Fallback, set everything
+            // If unique item doesn't exist yet (should be rare), set everything
             updateData.lastPrice = newData.price;
             updateData.lastPurchaseDate = oldData.purchaseDate;
-            updateData.purchaseCount = increment(1);
+            updateData.purchaseCount = increment(1); // Should technically be 1, but increment(1) handles merge case
             updateData.name = newUniqueItemName;
-            mustUpdate = true;
+            mustUpdateLastFields = true; // Ensure these are set
         }
 
-        // Apply the update
-        if (mustUpdate && uniqueItemSnap.exists()) {
-           batch.update(uniqueItemRef, updateData);
-        } else if (mustUpdate && !uniqueItemSnap.exists()) {
-           batch.set(uniqueItemRef, updateData, { merge: true });
-        } else if (!mustUpdate && uniqueItemSnap.exists()) {
-             // Only update displayName and category
-             batch.update(uniqueItemRef, {
-                displayName: newData.name.trim(),
-                category: newData.category
-            });
-        }
+        // Apply the update using either set (for new) or update (for existing)
+         if (mustUpdateLastFields) {
+             batch.set(uniqueItemRef, updateData, { merge: true }); // Use set with merge to handle both creation and update
+         } else if (uniqueItemSnap.exists()) {
+              // Only update displayName and category if not the latest purchase
+              batch.update(uniqueItemRef, {
+                 displayName: newData.name.trim(),
+                 category: newData.category
+             });
+         }
     }
 
     await batch.commit();
@@ -359,38 +360,46 @@ export const handleBackupData = async (userId, appId) => {
   const uniqueItemsPath = `/artifacts/${appId}/users/${userId}/unique_items`;
    const billsPath = `/artifacts/${appId}/users/${userId}/bills`;
   const profilePath = `/artifacts/${appId}/users/${userId}/profile`;
-  const profileRef = doc(db, profilePath, userId);
+  const profileRef = doc(db, profilePath, userId); // Path to the specific user's profile doc
   try {
+    // Fetch all collections and the profile document concurrently
     const [purchasesSnap, uniqueItemsSnap, billsSnap, profileSnap] = await Promise.all([
       getDocs(collection(db, purchasesPath)),
       getDocs(collection(db, uniqueItemsPath)),
       getDocs(collection(db, billsPath)),
-      getDoc(profileRef)
+      getDoc(profileRef) // Fetch the single profile document
     ]);
+
+    // Prepare data for JSON
     const backupData = {
-      profile: profileSnap.exists() ? profileSnap.data() : null,
+      profile: profileSnap.exists() ? profileSnap.data() : null, // Get profile data if it exists
       bills: billsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })),
       purchases: purchasesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })),
       unique_items: uniqueItemsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })),
     };
-    // Helper to convert Timestamps to ISO strings
+
+    // Replacer function to convert Firestore Timestamps to a serializable format
     const replacer = (key, value) => {
        if (value instanceof Timestamp) {
+            // Store as an object indicating the type and ISO string value
             return { __datatype__: 'timestamp', value: value.toDate().toISOString() };
        }
        return value;
     };
-    const jsonString = JSON.stringify(backupData, replacer, 2);
+
+    // Create JSON string and trigger download
+    const jsonString = JSON.stringify(backupData, replacer, 2); // Pretty print with 2 spaces
     const blob = new Blob([jsonString], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    const dateStamp = new Date().toISOString().split('T')[0];
+    const dateStamp = new Date().toISOString().split('T')[0]; // Format as YYYY-MM-DD
     link.download = `pantrypal_backup_${dateStamp}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(url); // Clean up the object URL
+
   } catch (error) {
     console.error("Backup process failed:", error);
     throw new Error("Failed to create backup file.");
@@ -407,82 +416,129 @@ export const handleRestoreData = async (file, userId, appId) => {
         reader.onload = async (event) => {
             try {
                 const jsonString = event.target.result;
-                // Helper to convert ISO strings back to Timestamps
+
+                // --- REVIVER FUNCTION ---
                  const reviver = (key, value) => {
+                    // Check for the format with 'type' and 'seconds'/'nanoseconds'
+                    if (value && typeof value === 'object' && value.type === 'firestore/timestamp/1.0' && typeof value.seconds === 'number' && typeof value.nanoseconds === 'number') {
+                        try {
+                           // Use the imported Timestamp constructor directly
+                           return new Timestamp(value.seconds, value.nanoseconds);
+                        } catch (e) {
+                           console.warn(`Error creating Timestamp from seconds/nanos for key "${key}":`, value, e);
+                           return serverTimestamp(); // Fallback to server timestamp on error
+                        }
+                    }
+                    // Keep the check for the ISO string format (from current backups)
                     if (value && typeof value === 'object' && value.__datatype__ === 'timestamp') {
                         const date = new Date(value.value);
                          if (!isNaN(date)) {
+                            // Use Timestamp.fromDate for Date objects
                             return Timestamp.fromDate(date);
                          }
                          console.warn(`Invalid date string encountered for key "${key}":`, value.value);
                          return serverTimestamp(); // Fallback
                     }
+                    // Return value unchanged if it's not a recognized timestamp format
                     return value;
                 };
+                // --- END REVIVER FUNCTION ---
+
                 const backupData = JSON.parse(jsonString, reviver);
+
                 // Validate file structure
                 if (!backupData || (!backupData.profile && !backupData.bills && !backupData.purchases && !backupData.unique_items)) {
                     throw new Error("Invalid backup file format. Missing expected data sections.");
                 }
-                const MAX_WRITES_PER_BATCH = 499;
+
+                const MAX_WRITES_PER_BATCH = 499; // Keep slightly under 500 limit
                 let batch = writeBatch(db);
                 let writeCount = 0;
+
                 // Helper to commit batches automatically
                 const commitBatch = async () => {
                     await batch.commit();
-                    batch = writeBatch(db);
+                    batch = writeBatch(db); // Start a new batch
                     writeCount = 0;
                     console.log("Committed batch during restore.");
                 };
+
+                 // Helper to add a write operation (set) to the current batch
                  const addWrite = async (docRef, data) => {
-                    batch.set(docRef, data);
+                    // Clean data: Remove undefined properties before setting
+                     const cleanData = Object.entries(data).reduce((acc, [key, val]) => {
+                         if (val !== undefined) {
+                             acc[key] = val;
+                         }
+                         return acc;
+                     }, {});
+
+                    batch.set(docRef, cleanData); // Use set for overwriting existing docs
                     writeCount++;
+                    // Commit if the batch is full
                     if (writeCount >= MAX_WRITES_PER_BATCH) {
                         await commitBatch();
                     }
                 };
+
                 // Restore Profile
                 if (backupData.profile) {
                      const profilePath = `/artifacts/${appId}/users/${userId}/profile`;
-                     const profileRef = doc(db, profilePath, userId);
+                     const profileRef = doc(db, profilePath, userId); // Profile doc ID is the userId
                      await addWrite(profileRef, backupData.profile);
                 }
+
                 // Restore Bills
                 if (backupData.bills && Array.isArray(backupData.bills)) {
                      const billsPath = `/artifacts/${appId}/users/${userId}/bills`;
                      for (const bill of backupData.bills) {
-                         if (!bill.id) continue;
-                         const billRef = doc(db, billsPath, bill.id);
-                         const { id, ...billDocData } = bill;
+                         // Ensure bill has an ID before proceeding
+                         if (!bill.id) {
+                             console.warn("Skipping bill without ID:", bill);
+                             continue;
+                         }
+                         const billRef = doc(db, billsPath, bill.id); // Use the ID from backup
+                         const { id, ...billDocData } = bill; // Exclude the ID from the data payload
                          await addWrite(billRef, billDocData);
                      }
                 }
+
                 // Restore Purchases
                 if (backupData.purchases && Array.isArray(backupData.purchases)) {
                     const purchasesPath = `/artifacts/${appId}/users/${userId}/purchases`;
                     for (const purchase of backupData.purchases) {
-                         if (!purchase.id) continue;
+                         if (!purchase.id) {
+                              console.warn("Skipping purchase without ID:", purchase);
+                              continue;
+                         };
                          const purchaseRef = doc(db, purchasesPath, purchase.id);
-                          const { id, ...purchaseDocData } = purchase;
+                         const { id, ...purchaseDocData } = purchase;
                          await addWrite(purchaseRef, purchaseDocData);
                     }
                 }
+
                 // Restore Unique Items
                 if (backupData.unique_items && Array.isArray(backupData.unique_items)) {
                     const uniqueItemsPath = `/artifacts/${appId}/users/${userId}/unique_items`;
                      for (const item of backupData.unique_items) {
-                         if (!item.id) continue;
-                         const itemRef = doc(db, uniqueItemsPath, item.id);
+                         if (!item.id) {
+                              console.warn("Skipping unique_item without ID:", item);
+                              continue;
+                         };
+                         const itemRef = doc(db, uniqueItemsPath, item.id); // Unique item ID is the lowercased name
                          const { id, ...itemDocData } = item;
                          await addWrite(itemRef, itemDocData);
                      }
                 }
-                // Commit any remaining writes
+
+                // Commit any remaining writes in the last batch
                 if (writeCount > 0) {
                      console.log(`Committing final ${writeCount} writes...`);
                      await batch.commit();
                 }
-                resolve();
+
+                resolve(); // Resolve the promise indicating success
+
             } catch (error) {
                 console.error("Restore process failed:", error);
                 reject(new Error(`Failed to parse or restore data: ${error.message}`));
@@ -492,9 +548,11 @@ export const handleRestoreData = async (file, userId, appId) => {
             console.error("Error reading file:", error);
             reject(new Error("Failed to read the backup file."));
         };
+        // Start reading the file as text
         reader.readAsText(file);
     });
 };
+
 
 // --- Export CSV Function ---
 export const handleExportCSV = (purchases, selectedMonth) => {
@@ -503,40 +561,51 @@ export const handleExportCSV = (purchases, selectedMonth) => {
       return;
     }
     try {
+      // Define CSV headers
       const headers = ['Date', 'Item', 'Category', 'Quantity', 'Unit', 'Price'];
+
+      // Map purchase data to CSV rows
       const rows = purchases.map(item => {
-        // Helper to escape CSV values
+        // Helper function to escape CSV special characters (comma, double quote, newline)
         const escapeCSV = (value) => {
             if (value === null || value === undefined) return '';
             let str = String(value);
+            // If the string contains comma, double quote, or newline, enclose in double quotes
+            // and escape existing double quotes by doubling them
             if (str.includes(',') || str.includes('"') || str.includes('\n')) {
                 str = `"${str.replace(/"/g, '""')}"`;
             }
             return str;
         };
+
+        // Format each field for the CSV row
         return [
-          escapeCSV(formatDate(item.purchaseDate)),
+          escapeCSV(formatDate(item.purchaseDate)), // Format date using util function
           escapeCSV(item.displayName),
           escapeCSV(item.category),
           escapeCSV(item.quantity),
           escapeCSV(item.unit),
-          String(item.price || 0) // Keep price as a number for CSV
-        ].join(',');
+          String(item.price || 0) // Ensure price is a string, handle null/undefined
+        ].join(','); // Join fields with commas
       });
+
+      // Combine headers and rows, separated by newlines
       const csvContent = [headers.join(','), ...rows].join('\n');
+
+      // Create a Blob and trigger download
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `pantrypal_report_${selectedMonth}.csv`;
+      link.download = `pantrypal_report_${selectedMonth}.csv`; // Dynamic filename
       document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      link.click(); // Programmatically click the link to trigger download
+      document.body.removeChild(link); // Clean up the link element
+      URL.revokeObjectURL(url); // Clean up the object URL
       toast.success("Report exported successfully!");
+
     } catch (error) {
       console.error("CSV Export failed:", error);
       toast.error(`CSV Export failed: ${error.message}`);
     }
 };
-

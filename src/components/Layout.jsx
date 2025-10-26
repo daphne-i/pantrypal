@@ -1,6 +1,7 @@
 import React from "react";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../hooks/useAuth";
+import { useOnlineStatus } from "../hooks/useOnlineStatus";
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -9,6 +10,8 @@ import {
   Plus,
   User,
   Leaf,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 export const Layout = ({
@@ -19,6 +22,7 @@ export const Layout = ({
 }) => {
   const { theme } = useTheme();
   const { userId } = useAuth();
+  const isOnline = useOnlineStatus();
 
   return (
     <div className="flex w-full min-h-screen">
@@ -28,6 +32,7 @@ export const Layout = ({
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           userId={userId}
+          isOnline={isOnline}
         />
       </div>
 
@@ -44,6 +49,7 @@ export const Layout = ({
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           setIsModalOpen={setIsModalOpen}
+          isOnline={isOnline}
         />
       </div>
 
@@ -59,8 +65,15 @@ export const Layout = ({
   );
 };
 
+const StatusIndicator = ({ isOnline }) => (
+  <div className={`flex items-center gap-1 text-xs ${isOnline ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
+    {isOnline ? <Wifi size={12} /> : <WifiOff size={12} />}
+    <span>{isOnline ? 'Online' : 'Offline'}</span>
+  </div>
+);
+
 // --- Sidebar (Desktop) ---
-const Sidebar = ({ currentPage, setCurrentPage, userId }) => {
+const Sidebar = ({ currentPage, setCurrentPage, userId, isOnline }) => {
   return (
     <nav
       className={`w-64 min-h-screen bg-glass border-r border-border p-6 flex flex-col justify-between shadow-lg`}
@@ -106,22 +119,23 @@ const Sidebar = ({ currentPage, setCurrentPage, userId }) => {
 
       {/* User Info */}
       <div className="flex items-center gap-3 p-3 rounded-lg bg-black/5 dark:bg-white/5">
-        <div className={`p-2 rounded-full bg-glass border border-border`}>
+        <div className={`p-2 rounded-full bg-glass border border-border flex-shrink-0`}>
           <User size={20} />
         </div>
         <div className="flex-1 overflow-hidden">
           <span className="text-xs font-medium">User ID</span>
           <p className="text-xs truncate" title={userId}>
-            {userId ? userId : "Loading..."}
+            {userId || "Loading..."}
           </p>
         </div>
+        <StatusIndicator isOnline={isOnline} />
       </div>
     </nav>
   );
 };
 
 // --- BottomNav (Mobile) ---
-const BottomNav = ({ currentPage, setCurrentPage, setIsModalOpen }) => {
+const BottomNav = ({ currentPage, setCurrentPage, setIsModalOpen, isOnline }) => {
   return (
     <nav
       // Increased backdrop blur and adjusted shadow for better visibility
@@ -165,7 +179,9 @@ const BottomNav = ({ currentPage, setCurrentPage, setIsModalOpen }) => {
         onClick={() => setCurrentPage("settings")}
         isMobile
       />
-    </nav>
+      <div className="absolute bottom-1 right-1"></div>
+      <StatusIndicator isOnline={isOnline} />
+        </nav>
   );
 };
 

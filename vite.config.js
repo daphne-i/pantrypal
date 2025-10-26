@@ -2,8 +2,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa'; // <-- Import the plugin
+const repoName = 'pantrypal';
 
 export default defineConfig({
+  base: `/${repoName}/`,
   plugins: [
     react(),
     VitePWA({ // <-- Add the PWA plugin configuration
@@ -40,8 +42,8 @@ export default defineConfig({
         theme_color: '#3b82f6', // Example: Ocean theme primary color
         background_color: '#f0f9ff', // Example: Ocean theme background color
         display: 'standalone', // Make it feel like a native app
-        scope: '/',
-        start_url: '/',
+        scope: `/${repoName}/`,
+        start_url: `/${repoName}/`,
         icons: [
           { // You NEED to create these icons and place them in public/icons/
             src: '/icons/icon-192x192.png',

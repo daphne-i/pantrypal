@@ -1,3 +1,39 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* --- Custom Scrollbar Styles --- */
+
+/* Basic width and color for Firefox */
+* {
+  scrollbar-width: thin; /* "auto" or "thin" */
+  scrollbar-color: var(--color-primary) var(--color-input); /* thumb track */
+}
+
+/* Styling for WebKit browsers (Chrome, Safari, Edge, etc.) */
+::-webkit-scrollbar {
+  width: 8px; /* Width of the vertical scrollbar */
+  height: 8px; /* Height of the horizontal scrollbar */
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-input); /* Color of the track */
+  border-radius: 4px; /* Optional: round the track corners */
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-primary); /* Color of the scrollbar thumb */
+  border-radius: 4px; /* Round the thumb corners */
+  border: 2px solid var(--color-input); /* Creates padding around thumb */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary-hover); /* Darker color on hover */
+}
+
+/* Optional: Style scrollbar corners (less common) */
+/*
+::-webkit-scrollbar-corner {
+  background: var(--color-background);
+}
+*/

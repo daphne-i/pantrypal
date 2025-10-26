@@ -23,7 +23,7 @@ export const Layout = ({
   return (
     <div className="flex w-full min-h-screen">
       {/* Sidebar (Desktop) */}
-      <div className="hidden md:flex md:w-64">
+      <div className="hidden md:flex md:w-64 flex-shrink-0"> {/* Added flex-shrink-0 */}
         <Sidebar
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
@@ -32,12 +32,14 @@ export const Layout = ({
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 p-4 md:p-8 max-h-screen overflow-y-auto">
-        <div className="max-w-7xl mx-auto w-full">{children}</div>
+      {/* --- ADDED pb-24 (padding-bottom: 6rem) for mobile --- */}
+      <main className="flex-1 p-4 md:p-8 max-h-screen overflow-y-auto pb-24 md:pb-8"> {/* Adjusted padding */}
+        {/* Removed extra max-w-7xl mx-auto w-full here, assumed it's handled within children pages */}
+        {children}
       </main>
 
       {/* Bottom Nav (Mobile) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50"> {/* Added z-50 */}
         <BottomNav
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
@@ -47,8 +49,9 @@ export const Layout = ({
 
       {/* FAB (Floating Action Button) - Desktop */}
       <div
-        className={`hidden md:block fixed bottom-8 right-8 z-50 bg-primary text-primary-text p-4 rounded-full shadow-lg cursor-pointer primary-hover transition-all duration-300 transform hover:scale-110`} // <-- FIX: Removed invalid comment
+        className={`hidden md:block fixed bottom-8 right-8 z-40 bg-primary text-primary-text p-4 rounded-full shadow-lg cursor-pointer primary-hover transition-all duration-300 transform hover:scale-110`} // Lowered z-index slightly
         onClick={() => setIsModalOpen(true)}
+        aria-label="Add New Purchase Entry" // Added aria-label
       >
         <Plus size={28} />
       </div>
@@ -101,7 +104,7 @@ const Sidebar = ({ currentPage, setCurrentPage, userId }) => {
         </ul>
       </div>
 
-      {/* User / Logout */}
+      {/* User Info */}
       <div className="flex items-center gap-3 p-3 rounded-lg bg-black/5 dark:bg-white/5">
         <div className={`p-2 rounded-full bg-glass border border-border`}>
           <User size={20} />
@@ -121,7 +124,8 @@ const Sidebar = ({ currentPage, setCurrentPage, userId }) => {
 const BottomNav = ({ currentPage, setCurrentPage, setIsModalOpen }) => {
   return (
     <nav
-      className={`bg-glass border-t border-border flex justify-around items-center p-2 shadow-inner-top`}
+      // Increased backdrop blur and adjusted shadow for better visibility
+      className={`bg-glass/80 backdrop-blur-md border-t border-border flex justify-around items-center p-2 shadow-lg`}
     >
       <NavItem
         label="Dashboard"
@@ -138,10 +142,11 @@ const BottomNav = ({ currentPage, setCurrentPage, setIsModalOpen }) => {
         isMobile
       />
 
-      {/* Mobile FAB */}
+      {/* Mobile FAB - Elevated z-index */}
       <div
-        className={`-mt-10 z-50 bg-primary text-primary-text p-4 rounded-full shadow-lg cursor-pointer primary-hover transition-all duration-300 transform hover:scale-110`}
+        className={`-mt-10 z-[60] bg-primary text-primary-text p-4 rounded-full shadow-lg cursor-pointer primary-hover transition-all duration-300 transform hover:scale-110`}
         onClick={() => setIsModalOpen(true)}
+        aria-label="Add New Purchase Entry" // Added aria-label
       >
         <Plus size={32} />
       </div>
@@ -170,16 +175,19 @@ const NavItem = ({ label, icon: Icon, isActive, onClick, isMobile }) => {
     return (
       <button
         onClick={onClick}
-        className={`flex flex-col items-center justify-center p-2 rounded-lg ${
-          isActive ? "text-icon" : "text-slate-500"
+        // Adjusted mobile item padding and text color
+        className={`flex flex-col items-center justify-center p-2 rounded-lg w-16 h-14 ${ // Added fixed size
+          isActive ? "text-primary" : "text-text-secondary hover:text-primary" // Use primary color for active
         } transition-colors duration-200`}
+        aria-label={label} // Added aria-label
       >
-        <Icon size={22} />
+        <Icon size={22} strokeWidth={isActive ? 2.5 : 2} /> {/* Slightly bolder icon when active */}
         <span className="text-xs font-medium">{label}</span>
       </button>
     );
   }
 
+  // Desktop Nav Item
   return (
     <li>
       <button
@@ -187,7 +195,7 @@ const NavItem = ({ label, icon: Icon, isActive, onClick, isMobile }) => {
         className={`w-full flex items-center gap-3 p-3 rounded-lg font-medium ${
           isActive
             ? `bg-primary text-primary-text shadow-md`
-            : `hover:bg-black/5 dark:hover:bg-white/5`
+            : `text-text-secondary hover:text-text hover:bg-black/5 dark:hover:bg-white/5` // Adjusted inactive style
         } transition-all duration-200`}
       >
         <Icon size={20} />

@@ -11,6 +11,7 @@ import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Toaster } from 'react-hot-toast';
 import { Timestamp } from "firebase/firestore"; // Import Timestamp
+import { LoginScreen } from "./components/LoginScreen";
 
 // Auth context provider (no change)
 const AuthContext = React.createContext();
@@ -31,7 +32,7 @@ export default function AppWrapper() {
 
 function App() {
   const [currentPage, setCurrentPage] = useState("dashboard");
-  const { isAuthReady } = useAuthContext();
+  const { user, isAuthReady } = useAuthContext();
 
   // --- Modal Management ---
   const [isAddBillModalOpen, setIsAddBillModalOpen] = useState(false);
@@ -96,6 +97,14 @@ function App() {
   if (!isAuthReady) {
     return <LoadingScreen />;
   }
+
+ if (!user) {
+   return (
+     <ThemeProvider> {/* ThemeProvider might be needed for LoginScreen styling */}
+       <LoginScreen />
+     </ThemeProvider>
+   );
+ }
 
   return (
     <ThemeProvider>

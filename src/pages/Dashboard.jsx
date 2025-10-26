@@ -301,7 +301,7 @@ export const Dashboard = ({ openAddItemsToBill }) => {
                <LoadingSpinner />
            ) : purchases && purchases.length > 0 ? (
              // Render chart only if there's data
-             <div className="flex-grow min-h-[250px]"> {/* Ensure minimum height for container */}
+            <div className="flex-grow min-h-[250px] w-full h-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie

@@ -5,7 +5,8 @@ import { useAuth } from "../hooks/useAuth";
 import { useDocument } from "../hooks/useDocument";
 import { handleBackupData, handleRestoreData } from "../firebaseUtils";
 import { formatCurrency } from '../utils'; // Import currency formatter
-import { Check, Copy, Loader2, Save, Upload, Download, AlertTriangle } from "lucide-react";
+import { Check, Copy, Loader2, Save, Upload, Download, AlertTriangle, LogOut } from "lucide-react";
+import { logOut } from "../firebaseConfig";
 
 // ThemeSelector Component (No changes needed here)
 const ThemeSelector = () => {
@@ -110,6 +111,7 @@ export const Settings = () => {
   const [isRestoring, setIsRestoring] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [fileToRestore, setFileToRestore] = useState(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const fileInputRef = useRef(null); // Ref for hidden file input
 
@@ -215,6 +217,21 @@ export const Settings = () => {
       setFileToRestore(null);
   }
 
+  // --- Logout Handler ---
+  const handleLogout = async () => {
+      setIsLoggingOut(true);
+      try {
+          await logOut();
+          toast.success("Logged out successfully.");
+          // No need to redirect, App.jsx will handle the state change
+      } catch (error) {
+          console.error("Logout failed:", error);
+          toast.error(`Logout failed: ${error.message}`);
+          setIsLoggingOut(false); // Only reset if error occurs
+      }
+      // Don't set isLoggingOut back to false on success, as the component will unmount/rerender
+  };
+
   // Display current budget safely
   const currentBudget = userProfile?.monthlyBudget;
 
@@ -305,6 +322,18 @@ export const Settings = () => {
               {isRestoring ? 'Restoring...' : 'Restore from Backup'}
             </button>
           </div>
+        </div>
+        {/* Logout Button */}
+        <div>
+           <h3 className="text-lg font-semibold mb-2">Sign Out</h3>
+            <button
+               onClick={handleLogout}
+               disabled={isLoggingOut || isBackingUp || isRestoring}
+               className={`flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-70 disabled:cursor-not-allowed`}
+            >
+              {isLoggingOut ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
+              {isLoggingOut ? 'Logging out...' : 'Log Out'}
+            </button>
         </div>
       </div>
 

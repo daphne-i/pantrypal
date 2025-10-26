@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
+import { useCollection } from '../hooks/useCollection'; // Import useCollection
 import { handleSaveItems } from '../firebaseUtils';
 import { CATEGORIES, UNITS, getCategoryIcon } from '../constants';
 import { formatCurrency } from '../utils';
@@ -47,8 +48,16 @@ const ItemRow = ({ item, onEdit, onDelete }) => {
 export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
   const { theme } = useTheme();
   const { userId, appId } = useAuth();
-  
-  // Form state
+  const suggestionBoxRef = useRef(null); // Ref for suggestion box
+  const nameInputRef = useRef(null); // Ref for name input
+
+  // --- Fetch Unique Items for Suggestions ---
+  const { data: uniqueItems } = useCollection(
+    // Fetch unique items only when the modal is potentially open and user is logged in
+    isOpen && userId && appId ? `artifacts/${appId}/users/${userId}/unique_items` : null
+  );
+
+  // --- Form state ---
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [unit, setUnit] = useState(UNITS[0]); // Default to first unit 'pcs'
@@ -56,34 +65,116 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
   const [price, setPrice] = useState("");
   const [error, setError] = useState(null);
 
-  // List state
+  // --- Suggestion State ---
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // --- State for last used category/unit ---
+  const [lastUsedUnit, setLastUsedUnit] = useState(UNITS[0]);
+  const [lastUsedCategory, setLastUsedCategory] = useState(CATEGORIES[0].name);
+
+  // --- List state ---
   const [currentItems, setCurrentItems] = useState([]);
   const [isEditingId, setIsEditingId] = useState(null); // Tracks ID of item being edited
   const [isSavingAll, setIsSavingAll] = useState(false);
 
-  // Clear everything when modal is closed or billId changes
+  // Clear everything when modal is closed
   useEffect(() => {
     if (isOpen) {
-        resetForm();
+        resetForm(true); // Full reset on open
         setCurrentItems([]);
         setIsSavingAll(false);
+        setSuggestions([]);
+        setShowSuggestions(false);
     }
-  }, [isOpen]);
+  }, [isOpen]); // Dependency: isOpen
 
-  const resetForm = () => {
+  // Reset form fields
+  const resetForm = (isOpening = false) => {
     setName("");
     setQuantity(1);
-    setUnit(UNITS[0]);
-    setCategory(CATEGORIES[0].name);
+    // Reset to defaults only when opening, otherwise use last used
+    setUnit(isOpening ? UNITS[0] : lastUsedUnit);
+    setCategory(isOpening ? CATEGORIES[0].name : lastUsedCategory);
     setPrice("");
     setIsEditingId(null);
     setError(null);
+    setShowSuggestions(false); // Hide suggestions on reset
   };
+
+  // --- Handle Name Input Change & Suggestions ---
+  const handleNameChange = (e) => {
+      const value = e.target.value;
+      setName(value);
+      setError(null); // Clear error on typing
+
+      // Show suggestions if input is not empty and uniqueItems are loaded
+      if (value.length > 0 && uniqueItems) {
+          const filtered = uniqueItems
+              .filter(item => item.displayName.toLowerCase().includes(value.toLowerCase()))
+              .slice(0, 5); // Limit to top 5 suggestions
+          setSuggestions(filtered);
+          setShowSuggestions(filtered.length > 0);
+      } else {
+          setSuggestions([]);
+          setShowSuggestions(false);
+      }
+  };
+
+  // --- Handle Selecting a Suggestion ---
+  const handleSuggestionClick = (suggestion) => {
+      setName(suggestion.displayName);
+      setCategory(suggestion.category || lastUsedCategory); // Use suggestion's category or fallback
+
+      // --- Determine Unit ---
+      // Try to get the unit from the most recent purchase of this specific item
+      // Note: We need to query purchases collection for this, which is async.
+      // For simplicity, we'll keep using the overall last used unit for now.
+      // A more complex implementation could involve fetching the last purchase
+      // record for this item name when a suggestion is clicked.
+      setUnit(lastUsedUnit); // Keep using the session's last used unit
+
+      // Pre-fill last price
+      const lastPriceEntry = suggestion.priceHistory?.[0];
+      const priceToFill = lastPriceEntry?.price ?? suggestion.lastPrice; // Use history first, fallback to old field
+      setPrice(priceToFill !== undefined ? String(priceToFill) : "");
+
+      // Clear and hide suggestions
+      setShowSuggestions(false);
+      setSuggestions([]);
+      // Focus on quantity input for faster workflow
+      document.getElementById('itemQty')?.focus();
+  };
+
+
+   // --- Close suggestions on outside click ---
+   useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Check if suggestion box exists and click is outside input AND suggestion box
+      if (
+          showSuggestions &&
+          nameInputRef.current && !nameInputRef.current.contains(event.target) &&
+          suggestionBoxRef.current && !suggestionBoxRef.current.contains(event.target)
+          ) {
+        setShowSuggestions(false);
+      }
+    };
+    // Add listener when suggestions are shown
+    if (showSuggestions) {
+        document.addEventListener('mousedown', handleClickOutside);
+    }
+    // Cleanup listener
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSuggestions]); // Re-run only when showSuggestions changes
+
 
   // --- Form Actions ---
   const handleSubmit = (e) => {
     e.preventDefault();
     setError(null);
+    setShowSuggestions(false); // Ensure suggestions are hidden on submit
 
     // Validation
     if (!name.trim() || !price || isNaN(parseFloat(price)) || parseFloat(price) < 0 || !quantity || isNaN(parseFloat(quantity)) || parseFloat(quantity) <= 0) {
@@ -95,23 +186,29 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
       id: isEditingId || crypto.randomUUID(), // Use existing ID if editing
       name: name.trim(),
       quantity: parseFloat(quantity),
-      unit,
-      category,
+      unit, // Use the current unit state
+      category, // Use the current category state
       price: parseFloat(price),
     };
+
+    // --- Remember last used category/unit ---
+    setLastUsedUnit(unit); // Update the last used unit
+    setLastUsedCategory(category); // Update the last used category
 
     if (isEditingId) {
         // Update item in list
         setCurrentItems(currentItems.map(item => item.id === isEditingId ? itemToSave : item));
         toast.success("Item updated", { duration: 1500 });
     } else {
-        // Add new item to list
+        // Add new item to list (prepend for visibility)
         setCurrentItems([itemToSave, ...currentItems]);
     }
-    
-    resetForm();
+
+    resetForm(false); // Partial reset (keeps last used cat/unit)
+    nameInputRef.current?.focus(); // Focus name input for next item addition
   };
 
+  // Handle Edit/Delete
   const handleEdit = (item) => {
       setIsEditingId(item.id);
       setName(item.name);
@@ -119,10 +216,16 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
       setUnit(item.unit);
       setCategory(item.category);
       setPrice(item.price);
+      setShowSuggestions(false); // Hide suggestions when editing starts
+      nameInputRef.current?.focus(); // Focus name input when editing
   };
 
   const handleDelete = (id) => {
       setCurrentItems(currentItems.filter(item => item.id !== id));
+      // If the deleted item was being edited, reset the form
+      if (id === isEditingId) {
+          resetForm(false);
+      }
   };
 
 
@@ -135,7 +238,7 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
       setIsSavingAll(true);
       setError(null);
       try {
-          // FIX: Pass the `billDate` (string) to the save function
+          // Pass the `billDate` (string) to the save function
           await handleSaveItems(currentItems, billId, billDate, userId, appId);
           toast.success(`Successfully saved ${currentItems.length} item(s)!`);
           handleClose(); // Close modal on success
@@ -148,51 +251,74 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
       }
   };
 
+  // --- Handle Close ---
   const handleClose = () => {
-    if (isSavingAll) return;
+    if (isSavingAll) return; // Prevent closing while saving all
     onClose();
   };
 
-  // Calculate total for items in the list
+  // Calculate total for items in the current list
   const currentItemsTotal = useMemo(() => {
       return currentItems.reduce((sum, item) => sum + (item.price || 0), 0);
   }, [currentItems]);
-  
+
 
   if (!isOpen) return null;
 
   return (
+    // Backdrop
     <div
       className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4"
-      onClick={handleClose}
+      onClick={handleClose} // Close on backdrop click
     >
       {/* Modal Content */}
       <div
         className={`w-full max-w-2xl p-6 rounded-2xl bg-glass border border-border shadow-xl z-50 flex flex-col max-h-[90vh]`}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()} // Prevent click propagation to backdrop
       >
         {/* Header */}
-        <div className="flex justify-between items-center mb-4 pb-4 border-b border-border">
+        <div className="flex justify-between items-center mb-4 pb-4 border-b border-border flex-shrink-0">
           <h2 className="text-2xl font-bold">{isEditingId ? 'Edit Item' : 'Add Items to Bill'}</h2>
           <button
             onClick={handleClose}
             className={`p-2 rounded-full hover:bg-black/10 dark:hover:bg-white/10`}
             disabled={isSavingAll}
+            aria-label="Close modal"
           >
             <X size={20} />
           </button>
         </div>
 
         {/* Form */}
-        <form className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end mb-4" onSubmit={handleSubmit}>
-            {/* Name */}
-            <div className="md:col-span-2">
+        <form className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end mb-4 flex-shrink-0" onSubmit={handleSubmit}>
+            {/* Name (with Suggestions) */}
+            <div className="md:col-span-2 relative">
                 <label htmlFor="itemName" className="block text-xs font-medium mb-1">Item Name</label>
                 <input
                   id="itemName" type="text" placeholder="e.g., Apple"
                   className={`w-full p-2 rounded-lg bg-input border border-border text-sm focus:ring-2 focus:ring-primary focus:outline-none`}
-                  value={name} onChange={(e) => setName(e.target.value)} required
+                  value={name}
+                  onChange={handleNameChange} // Use suggestion handler
+                  onFocus={() => name.length > 0 && setShowSuggestions(suggestions.length > 0)} // Show suggestions on focus if conditions met
+                  ref={nameInputRef} // Add ref to input
+                  autoComplete="off" // Disable browser autocomplete
+                  required
                 />
+                {/* Suggestions Dropdown */}
+                {showSuggestions && suggestions.length > 0 && (
+                    <div ref={suggestionBoxRef} className="absolute top-full left-0 mt-1 w-full max-h-40 overflow-y-auto bg-input border border-border rounded-md shadow-lg z-20">
+                        {suggestions.map(sugg => (
+                            <button
+                                type="button" // Important: Prevent form submission on click
+                                key={sugg.id}
+                                onClick={() => handleSuggestionClick(sugg)}
+                                className="block w-full text-left px-3 py-1.5 text-sm hover:bg-primary/10 transition-colors duration-100"
+                            >
+                                {sugg.displayName} <span className="text-xs text-text-secondary">({sugg.category})</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
             {/* Qty */}
             <div>
@@ -238,10 +364,11 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
             <button
               type="submit"
               className={`flex items-center justify-center gap-2 p-2 rounded-lg font-medium ${
-                isEditingId 
-                ? 'bg-amber-500 hover:bg-amber-600 text-white' 
+                isEditingId
+                ? 'bg-amber-500 hover:bg-amber-600 text-white' // Amber color for update
                 : 'bg-primary text-primary-text primary-hover'
               } transition-colors text-sm`}
+              aria-label={isEditingId ? 'Update item' : 'Add item'}
             >
               {isEditingId ? <Edit2 size={16} /> : <Plus size={16} />}
               {isEditingId ? 'Update' : 'Add'}
@@ -250,13 +377,13 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
 
         {/* Error Message */}
         {error && (
-            <p className="text-sm text-red-500 font-medium mb-2 text-center">{error}</p>
+            <p className="text-sm text-red-500 font-medium mb-2 text-center flex-shrink-0">{error}</p>
         )}
 
         {/* Divider */}
-        <div className="border-t border-border mb-4"></div>
+        <div className="border-t border-border mb-4 flex-shrink-0"></div>
 
-        {/* Items List */}
+        {/* Items List - Scrollable */}
         <div className="flex-grow overflow-y-auto pr-2 space-y-2 min-h-[150px]">
             {currentItems.length === 0 ? (
                 <p className="text-center text-text-secondary py-10">No items added yet.</p>
@@ -268,11 +395,13 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
         </div>
 
         {/* Footer */}
-        <div className="flex justify-between items-center pt-4 mt-4 border-t border-border">
-            <div>
-                <span className="font-semibold">Total Items: </span>{currentItems.length}
-                <span className="font-semibold ml-4">Total Price: </span>{formatCurrency(currentItemsTotal)}
+        <div className="flex justify-between items-center pt-4 mt-4 border-t border-border flex-shrink-0">
+            {/* Totals */}
+            <div className="text-sm">
+                <span className="font-semibold">Items: </span>{currentItems.length}
+                <span className="font-semibold ml-4">Total: </span>{formatCurrency(currentItemsTotal)}
             </div>
+            {/* Action Buttons */}
             <div className="flex gap-3">
                  <button
                     type="button"

@@ -1,3 +1,4 @@
+// src/components/AddItemsModal.jsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../hooks/useAuth';
@@ -48,34 +49,33 @@ const ItemRow = ({ item, onEdit, onDelete }) => {
 export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
   const { theme } = useTheme();
   const { userId, appId } = useAuth();
-  const suggestionBoxRef = useRef(null); // Ref for suggestion box
-  const nameInputRef = useRef(null); // Ref for name input
+  const suggestionBoxRef = useRef(null);
+  const nameInputRef = useRef(null);
 
-  // --- Fetch Unique Items for Suggestions ---
+  // Fetch Unique Items for Suggestions
   const { data: uniqueItems } = useCollection(
-    // Fetch unique items only when the modal is potentially open and user is logged in
     isOpen && userId && appId ? `artifacts/${appId}/users/${userId}/unique_items` : null
   );
 
-  // --- Form state ---
+  // Form state
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState(1);
-  const [unit, setUnit] = useState(UNITS[0]); // Default to first unit 'pcs'
-  const [category, setCategory] = useState(CATEGORIES[0].name); // Default to first category 'Bakery'
+  const [unit, setUnit] = useState(UNITS[0]);
+  const [category, setCategory] = useState(CATEGORIES[0].name);
   const [price, setPrice] = useState("");
   const [error, setError] = useState(null);
 
-  // --- Suggestion State ---
+  // Suggestion State
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // --- State for last used category/unit ---
+  // State for last used category/unit
   const [lastUsedUnit, setLastUsedUnit] = useState(UNITS[0]);
   const [lastUsedCategory, setLastUsedCategory] = useState(CATEGORIES[0].name);
 
-  // --- List state ---
+  // List state
   const [currentItems, setCurrentItems] = useState([]);
-  const [isEditingId, setIsEditingId] = useState(null); // Tracks ID of item being edited
+  const [isEditingId, setIsEditingId] = useState(null);
   const [isSavingAll, setIsSavingAll] = useState(false);
 
   // Clear everything when modal is closed
@@ -87,32 +87,30 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
         setSuggestions([]);
         setShowSuggestions(false);
     }
-  }, [isOpen]); // Dependency: isOpen
+  }, [isOpen]);
 
   // Reset form fields
   const resetForm = (isOpening = false) => {
     setName("");
     setQuantity(1);
-    // Reset to defaults only when opening, otherwise use last used
     setUnit(isOpening ? UNITS[0] : lastUsedUnit);
     setCategory(isOpening ? CATEGORIES[0].name : lastUsedCategory);
     setPrice("");
     setIsEditingId(null);
     setError(null);
-    setShowSuggestions(false); // Hide suggestions on reset
+    setShowSuggestions(false);
   };
 
-  // --- Handle Name Input Change & Suggestions ---
+  // Handle Name Input Change & Suggestions
   const handleNameChange = (e) => {
       const value = e.target.value;
       setName(value);
       setError(null); // Clear error on typing
 
-      // Show suggestions if input is not empty and uniqueItems are loaded
       if (value.length > 0 && uniqueItems) {
           const filtered = uniqueItems
               .filter(item => item.displayName.toLowerCase().includes(value.toLowerCase()))
-              .slice(0, 5); // Limit to top 5 suggestions
+              .slice(0, 5);
           setSuggestions(filtered);
           setShowSuggestions(filtered.length > 0);
       } else {
@@ -121,36 +119,25 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
       }
   };
 
-  // --- Handle Selecting a Suggestion ---
+  // Handle Selecting a Suggestion
   const handleSuggestionClick = (suggestion) => {
       setName(suggestion.displayName);
-      setCategory(suggestion.category || lastUsedCategory); // Use suggestion's category or fallback
+      setCategory(suggestion.category || lastUsedCategory);
+      setUnit(lastUsedUnit); // Keep using the session's last used unit for now
 
-      // --- Determine Unit ---
-      // Try to get the unit from the most recent purchase of this specific item
-      // Note: We need to query purchases collection for this, which is async.
-      // For simplicity, we'll keep using the overall last used unit for now.
-      // A more complex implementation could involve fetching the last purchase
-      // record for this item name when a suggestion is clicked.
-      setUnit(lastUsedUnit); // Keep using the session's last used unit
-
-      // Pre-fill last price
       const lastPriceEntry = suggestion.priceHistory?.[0];
-      const priceToFill = lastPriceEntry?.price ?? suggestion.lastPrice; // Use history first, fallback to old field
+      const priceToFill = lastPriceEntry?.price ?? suggestion.lastPrice;
       setPrice(priceToFill !== undefined ? String(priceToFill) : "");
 
-      // Clear and hide suggestions
       setShowSuggestions(false);
       setSuggestions([]);
-      // Focus on quantity input for faster workflow
       document.getElementById('itemQty')?.focus();
   };
 
 
-   // --- Close suggestions on outside click ---
+   // Close suggestions on outside click
    useEffect(() => {
     const handleClickOutside = (event) => {
-      // Check if suggestion box exists and click is outside input AND suggestion box
       if (
           showSuggestions &&
           nameInputRef.current && !nameInputRef.current.contains(event.target) &&
@@ -159,53 +146,47 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
         setShowSuggestions(false);
       }
     };
-    // Add listener when suggestions are shown
     if (showSuggestions) {
         document.addEventListener('mousedown', handleClickOutside);
     }
-    // Cleanup listener
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showSuggestions]); // Re-run only when showSuggestions changes
+  }, [showSuggestions]);
 
 
-  // --- Form Actions ---
+  // Form Actions
   const handleSubmit = (e) => {
     e.preventDefault();
     setError(null);
-    setShowSuggestions(false); // Ensure suggestions are hidden on submit
+    setShowSuggestions(false);
 
-    // Validation
     if (!name.trim() || !price || isNaN(parseFloat(price)) || parseFloat(price) < 0 || !quantity || isNaN(parseFloat(quantity)) || parseFloat(quantity) <= 0) {
       setError("Please enter a valid name, price, and quantity.");
       return;
     }
 
     const itemToSave = {
-      id: isEditingId || crypto.randomUUID(), // Use existing ID if editing
+      id: isEditingId || crypto.randomUUID(),
       name: name.trim(),
       quantity: parseFloat(quantity),
-      unit, // Use the current unit state
-      category, // Use the current category state
+      unit,
+      category,
       price: parseFloat(price),
     };
 
-    // --- Remember last used category/unit ---
-    setLastUsedUnit(unit); // Update the last used unit
-    setLastUsedCategory(category); // Update the last used category
+    setLastUsedUnit(unit);
+    setLastUsedCategory(category);
 
     if (isEditingId) {
-        // Update item in list
         setCurrentItems(currentItems.map(item => item.id === isEditingId ? itemToSave : item));
         toast.success("Item updated", { duration: 1500 });
     } else {
-        // Add new item to list (prepend for visibility)
         setCurrentItems([itemToSave, ...currentItems]);
     }
 
-    resetForm(false); // Partial reset (keeps last used cat/unit)
-    nameInputRef.current?.focus(); // Focus name input for next item addition
+    resetForm(false);
+    nameInputRef.current?.focus();
   };
 
   // Handle Edit/Delete
@@ -216,20 +197,19 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
       setUnit(item.unit);
       setCategory(item.category);
       setPrice(item.price);
-      setShowSuggestions(false); // Hide suggestions when editing starts
-      nameInputRef.current?.focus(); // Focus name input when editing
+      setShowSuggestions(false);
+      nameInputRef.current?.focus();
   };
 
   const handleDelete = (id) => {
       setCurrentItems(currentItems.filter(item => item.id !== id));
-      // If the deleted item was being edited, reset the form
       if (id === isEditingId) {
           resetForm(false);
       }
   };
 
 
-  // --- Save All Items ---
+  // Save All Items
   const handleSaveAllItems = async () => {
       if (currentItems.length === 0) {
           setError("No items to save. Add at least one item.");
@@ -238,10 +218,9 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
       setIsSavingAll(true);
       setError(null);
       try {
-          // Pass the `billDate` (string) to the save function
           await handleSaveItems(currentItems, billId, billDate, userId, appId);
           toast.success(`Successfully saved ${currentItems.length} item(s)!`);
-          handleClose(); // Close modal on success
+          handleClose();
       } catch (err) {
           console.error("Error saving items:", err);
           setError(`Failed to save items: ${err.message}`);
@@ -251,9 +230,9 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
       }
   };
 
-  // --- Handle Close ---
+  // Handle Close
   const handleClose = () => {
-    if (isSavingAll) return; // Prevent closing while saving all
+    if (isSavingAll) return;
     onClose();
   };
 
@@ -266,18 +245,19 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
   if (!isOpen) return null;
 
   return (
-    // Backdrop
+    // Backdrop: Centering, padding, fallback overflow
     <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4"
-      onClick={handleClose} // Close on backdrop click
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-4 overflow-y-auto" // Keep flex center, padding; add overflow-y-auto
+      onClick={handleClose}
     >
-      {/* Modal Content */}
+      {/* Modal Content: Make THIS scrollable internally and add padding */}
       <div
-        className={`w-full max-w-2xl p-6 rounded-2xl bg-glass border border-border shadow-xl z-50 flex flex-col max-h-[90vh] pb-24 md:pb-6`}
-        onClick={(e) => e.stopPropagation()} // Prevent click propagation to backdrop
+        className={`w-full max-w-2xl p-6 rounded-2xl bg-glass border border-border shadow-xl z-50 my-auto overflow-y-auto pb-24 md:pb-6`} // my-auto, overflow-y-auto, pb-24 md:pb-6
+        // REMOVED flex flex-col, REMOVED max-h
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex justify-between items-center mb-4 pb-4 border-b border-border flex-shrink-0">
+        <div className="flex justify-between items-center mb-4 pb-4 border-b border-border">
           <h2 className="text-2xl font-bold">{isEditingId ? 'Edit Item' : 'Add Items to Bill'}</h2>
           <button
             onClick={handleClose}
@@ -290,7 +270,7 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
         </div>
 
         {/* Form */}
-        <form className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end mb-4 flex-shrink-0" onSubmit={handleSubmit}>
+        <form className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end mb-4" onSubmit={handleSubmit}>
             {/* Name (with Suggestions) */}
             <div className="md:col-span-2 relative">
                 <label htmlFor="itemName" className="block text-xs font-medium mb-1">Item Name</label>
@@ -298,10 +278,10 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
                   id="itemName" type="text" placeholder="e.g., Apple"
                   className={`w-full p-2 rounded-lg bg-input border border-border text-sm focus:ring-2 focus:ring-primary focus:outline-none`}
                   value={name}
-                  onChange={handleNameChange} // Use suggestion handler
-                  onFocus={() => name.length > 0 && setShowSuggestions(suggestions.length > 0)} // Show suggestions on focus if conditions met
-                  ref={nameInputRef} // Add ref to input
-                  autoComplete="off" // Disable browser autocomplete
+                  onChange={handleNameChange}
+                  onFocus={() => name.length > 0 && setShowSuggestions(suggestions.length > 0)}
+                  ref={nameInputRef}
+                  autoComplete="off"
                   required
                 />
                 {/* Suggestions Dropdown */}
@@ -309,7 +289,7 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
                     <div ref={suggestionBoxRef} className="absolute top-full left-0 mt-1 w-full max-h-40 overflow-y-auto bg-input border border-border rounded-md shadow-lg z-20">
                         {suggestions.map(sugg => (
                             <button
-                                type="button" // Important: Prevent form submission on click
+                                type="button"
                                 key={sugg.id}
                                 onClick={() => handleSuggestionClick(sugg)}
                                 className="block w-full text-left px-3 py-1.5 text-sm hover:bg-primary/10 transition-colors duration-100"
@@ -365,9 +345,9 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
               type="submit"
               className={`flex items-center justify-center gap-2 p-2 rounded-lg font-medium ${
                 isEditingId
-                ? 'bg-amber-500 hover:bg-amber-600 text-white' // Amber color for update
+                ? 'bg-amber-500 hover:bg-amber-600 text-white'
                 : 'bg-primary text-primary-text primary-hover'
-              } transition-colors text-sm`}
+              } transition-colors text-sm md:col-start-6`} // Use md:col-start-6 to ensure it's last
               aria-label={isEditingId ? 'Update item' : 'Add item'}
             >
               {isEditingId ? <Edit2 size={16} /> : <Plus size={16} />}
@@ -377,57 +357,58 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
 
         {/* Error Message */}
         {error && (
-            <p className="text-sm text-red-500 font-medium mb-2 text-center flex-shrink-0">{error}</p>
+            <p className="text-sm text-red-500 font-medium mb-2 text-center">{error}</p>
         )}
 
         {/* Divider */}
-        <div className="border-t border-border mb-4 flex-shrink-0"></div>
+        <div className="border-t border-border mb-4"></div>
 
-        {/* Items List - Scrollable */}
-        <div className="flex-grow overflow-y-auto pr-2 space-y-2 min-h-[150px]">
-            {currentItems.length === 0 ? (
-                <p className="text-center text-text-secondary py-10">No items added yet.</p>
-            ) : (
-                currentItems.map(item => (
-                    <ItemRow key={item.id} item={item} onEdit={handleEdit} onDelete={handleDelete} />
-                ))
-            )}
+        {/* Items List - Simple block layout */}
+        <div
+          className="space-y-2 mb-4 pr-1" // Basic spacing, margin bottom. Added pr-1 for scrollbar if needed
+        >
+          {currentItems.length === 0 ? (
+            <p className="text-center text-text-secondary py-10">No items added yet.</p>
+          ) : (
+            currentItems.map(item => (
+              <ItemRow key={item.id} item={item} onEdit={handleEdit} onDelete={handleDelete} />
+            ))
+          )}
         </div>
 
         {/* Footer */}
-        <div className="flex justify-between items-center pt-4 mt-4 border-t border-border flex-shrink-0">
-            {/* Totals */}
-            <div className="text-sm">
-                <span className="font-semibold">Items: </span>{currentItems.length}
-                <span className="font-semibold ml-4">Total: </span>{formatCurrency(currentItemsTotal)}
-            </div>
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-                 <button
-                    type="button"
-                    onClick={handleClose}
-                    className={`px-4 py-2 rounded-lg font-medium hover:bg-black/10 dark:hover:bg-white/10 transition-colors`}
-                    disabled={isSavingAll}
-                >
-                    Cancel
-                </button>
+        <div className="flex justify-between items-center pt-4 border-t border-border mt-4"> {/* Basic spacing */}
+           {/* Totals */}
+           <div className="text-sm">
+               <span className="font-semibold">Items: </span>{currentItems.length}
+               <span className="font-semibold ml-4">Total: </span>{formatCurrency(currentItemsTotal)}
+           </div>
+           {/* Action Buttons */}
+           <div className="flex gap-3">
                 <button
-                    type="button"
-                    onClick={handleSaveAllItems}
-                    className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-70`}
-                    disabled={isSavingAll || currentItems.length === 0}
-                >
-                    {isSavingAll ? (
-                        <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                        <Save size={18} />
-                    )}
-                    {isSavingAll ? "Saving..." : `Save All (${currentItems.length}) Items`}
-                </button>
-            </div>
+                   type="button"
+                   onClick={handleClose}
+                   className={`px-4 py-2 rounded-lg font-medium hover:bg-black/10 dark:hover:bg-white/10 transition-colors`}
+                   disabled={isSavingAll}
+               >
+                   Cancel
+               </button>
+               <button
+                   type="button"
+                   onClick={handleSaveAllItems}
+                   className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium bg-green-600 text-white hover:bg-green-700 transition-colors disabled:opacity-70`}
+                   disabled={isSavingAll || currentItems.length === 0}
+               >
+                   {isSavingAll ? (
+                       <Loader2 size={18} className="animate-spin" />
+                   ) : (
+                       <Save size={18} />
+                   )}
+                   {isSavingAll ? "Saving..." : `Save All (${currentItems.length}) Items`}
+               </button>
+           </div>
         </div>
       </div>
     </div>
   );
 };
-

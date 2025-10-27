@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa'; // <-- Import the plugin
 const repoName = 'pantrypal';
+const basePath = `/${repoName}/`;
 
 export default defineConfig({
   base: `/${repoName}/`,
@@ -36,26 +37,35 @@ export default defineConfig({
         ]
       },
       manifest: {
+        id: basePath,
         name: 'PantryPal',
         short_name: 'PantryPal',
         description: 'Your personal pantry and grocery tracker.',
         theme_color: '#3b82f6', // Example: Ocean theme primary color
         background_color: '#f0f9ff', // Example: Ocean theme background color
         display: 'standalone', // Make it feel like a native app
-        scope: `/${repoName}/`,
-        start_url: `/${repoName}/`,
+        scope: basePath,
+        start_url: basePath,
         icons: [
-          { // You NEED to create these icons and place them in public/icons/
-            src: '/icons/icon-192x192.png',
+          {
+            // MANUALLY ADD base path to src
+            src: `${basePath}icons/icon-128x128.png`, // <-- CHANGED
             sizes: '128x128',
             type: 'image/png'
           },
           {
-            src: '/icons/icon-512x512.png',
+            // MANUALLY ADD base path to src
+            src: `${basePath}icons/icon-512x512.png`, // <-- CHANGED
             sizes: '512x512',
             type: 'image/png'
           }
-        
+          // maskable icon if you have one, add basePath here too
+          // {
+          //   src: `${basePath}icons/icon-maskable-512x512.png`,
+          //   sizes: '512x512',
+          //   type: 'image/png',
+          //   purpose: 'maskable'
+          // }
         ]
       }
     })

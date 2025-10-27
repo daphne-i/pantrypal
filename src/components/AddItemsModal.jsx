@@ -273,7 +273,7 @@ export const AddItemsModal = ({ isOpen, onClose, billId, billDate }) => {
     >
       {/* Modal Content */}
       <div
-        className={`w-full max-w-2xl p-6 rounded-2xl bg-glass border border-border shadow-xl z-50 flex flex-col max-h-[90vh]`}
+        className={`w-full max-w-2xl p-6 rounded-2xl bg-glass border border-border shadow-xl z-50 flex flex-col max-h-[90vh] pb-24 md:pb-6`}
         onClick={(e) => e.stopPropagation()} // Prevent click propagation to backdrop
       >
         {/* Header */}
